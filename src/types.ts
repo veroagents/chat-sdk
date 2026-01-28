@@ -1,0 +1,257 @@
+/**
+ * VeroAI Chat SDK Types
+ */
+
+// ============================================================================
+// Configuration
+// ============================================================================
+
+export interface ChatClientConfig {
+  /** VeroAI API URL (e.g., https://api.veroai.dev) */
+  apiUrl: string;
+  /** WebSocket URL for real-time events (e.g., wss://ws.veroai.dev) */
+  wsUrl?: string;
+  /** Authentication token (JWT) */
+  token?: string;
+  /** Token getter function for dynamic token retrieval */
+  getToken?: () => string | null | Promise<string | null>;
+  /** Auto-connect to WebSocket on initialization */
+  autoConnect?: boolean;
+  /** Auto-reconnect on disconnect */
+  autoReconnect?: boolean;
+  /** Reconnect interval in ms */
+  reconnectInterval?: number;
+  /** Max reconnect attempts */
+  maxReconnectAttempts?: number;
+}
+
+// ============================================================================
+// User Types
+// ============================================================================
+
+export interface User {
+  id: string;
+  email?: string;
+  firstName?: string;
+  lastName?: string;
+  isVirtual?: boolean;
+  agentConfigId?: string;
+  status?: PresenceStatus;
+  statusMessage?: string;
+  lastSeen?: string;
+  createdAt?: string;
+}
+
+export type PresenceStatus = 'online' | 'away' | 'busy' | 'offline';
+
+export interface UserPresence {
+  userId: string;
+  status: PresenceStatus;
+  statusMessage?: string;
+  lastSeen?: string;
+  metadata?: Record<string, unknown>;
+}
+
+// ============================================================================
+// Conversation Types
+// ============================================================================
+
+export type ConversationType = 'direct' | 'group' | 'channel' | 'support';
+
+export interface Conversation {
+  id: string;
+  name?: string;
+  type: ConversationType;
+  isActive: boolean;
+  lastMessageAt?: string;
+  agentEnabled?: boolean;
+  agentConfigId?: string;
+  participants?: Participant[];
+  unreadCount?: number;
+  metadata?: Record<string, unknown>;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface Participant {
+  userId: string;
+  role: 'admin' | 'member';
+  isActive: boolean;
+  joinedAt?: string;
+  lastSeen?: string;
+  user?: User;
+}
+
+export interface CreateConversationParams {
+  type?: ConversationType;
+  name?: string;
+  participantIds: string[];
+  agentConfigId?: string;
+  metadata?: Record<string, unknown>;
+}
+
+// ============================================================================
+// Message Types
+// ============================================================================
+
+export type MessageType = 'text' | 'system' | 'agent' | 'file' | 'call';
+
+export interface Message {
+  id: string;
+  conversationId: string;
+  content: string;
+  messageType: MessageType;
+  senderId?: string;
+  sender?: User;
+  readBy?: ReadReceipt[];
+  metadata?: Record<string, unknown>;
+  createdAt?: string;
+  editedAt?: string;
+}
+
+export interface ReadReceipt {
+  userId: string;
+  readAt?: string;
+}
+
+export interface SendMessageParams {
+  content: string;
+  messageType?: MessageType;
+  metadata?: Record<string, unknown>;
+}
+
+export interface GetMessagesParams {
+  limit?: number;
+  offset?: number;
+  before?: string;
+}
+
+export interface PaginatedMessages {
+  messages: Message[];
+  total: number;
+  hasMore: boolean;
+  limit: number;
+  offset: number;
+}
+
+// ============================================================================
+// Agent Types
+// ============================================================================
+
+export interface AgentConfig {
+  id: string;
+  name: string;
+  description?: string;
+  jobRole?: string;
+  systemPrompt?: string;
+  isActive: boolean;
+}
+
+// ============================================================================
+// WebSocket Event Types
+// ============================================================================
+
+export type WebSocketEventType =
+  | 'connected'
+  | 'disconnected'
+  | 'error'
+  | 'message'
+  | 'message:new'
+  | 'message:updated'
+  | 'message:deleted'
+  | 'conversation:created'
+  | 'conversation:updated'
+  | 'participant:joined'
+  | 'participant:left'
+  | 'presence:updated'
+  | 'typing:start'
+  | 'typing:stop'
+  | 'read:receipt'
+  | 'call:ring'
+  | 'call:accept'
+  | 'call:reject'
+  | 'call:end';
+
+export interface WebSocketMessage<T = unknown> {
+  type: WebSocketEventType;
+  payload: T;
+  timestamp: string;
+}
+
+export interface NewMessageEvent {
+  message: Message;
+  conversationId: string;
+}
+
+export interface TypingEvent {
+  conversationId: string;
+  userId: string;
+  userName?: string;
+}
+
+export interface PresenceEvent {
+  userId: string;
+  status: PresenceStatus;
+  statusMessage?: string;
+}
+
+export interface ReadReceiptEvent {
+  conversationId: string;
+  messageId: string;
+  userId: string;
+  readAt: string;
+}
+
+// ============================================================================
+// Call Types
+// ============================================================================
+
+export type CallAction = 'ring' | 'accept' | 'reject' | 'end';
+export type CallType = 'audio' | 'video';
+
+export interface CallEvent {
+  conversationId: string;
+  userId: string;
+  action: CallAction;
+  callType?: CallType;
+  roomName?: string;
+}
+
+// ============================================================================
+// API Response Types
+// ============================================================================
+
+export interface ApiError {
+  code: string;
+  message: string;
+}
+
+export interface ApiResponse<T> {
+  data?: T;
+  error?: ApiError;
+}
+
+// ============================================================================
+// Event Emitter Types
+// ============================================================================
+
+export interface ChatEvents {
+  connected: () => void;
+  disconnected: (reason?: string) => void;
+  error: (error: Error) => void;
+  'message:new': (event: NewMessageEvent) => void;
+  'message:updated': (message: Message) => void;
+  'message:deleted': (messageId: string, conversationId: string) => void;
+  'conversation:created': (conversation: Conversation) => void;
+  'conversation:updated': (conversation: Conversation) => void;
+  'participant:joined': (conversationId: string, participant: Participant) => void;
+  'participant:left': (conversationId: string, userId: string) => void;
+  'presence:updated': (event: PresenceEvent) => void;
+  'typing:start': (event: TypingEvent) => void;
+  'typing:stop': (event: TypingEvent) => void;
+  'read:receipt': (event: ReadReceiptEvent) => void;
+  'call:ring': (event: CallEvent) => void;
+  'call:accept': (event: CallEvent) => void;
+  'call:reject': (event: CallEvent) => void;
+  'call:end': (event: CallEvent) => void;
+}
