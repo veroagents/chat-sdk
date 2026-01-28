@@ -312,7 +312,7 @@ export class ChatClient extends EventEmitter<ChatEvents> {
   }
 
   // ============================================================================
-  // Voice/Video Calls (LiveKit)
+  // Voice/Video Calls
   // ============================================================================
 
   /**
@@ -321,7 +321,7 @@ export class ChatClient extends EventEmitter<ChatEvents> {
    * @example
    * ```typescript
    * const room = await chat.createRoom({ name: `call-${conversationId}` });
-   * // Use room.wsUrl and room.token with LiveKit client
+   * // Use room.wsUrl and room.token with voice client
    * ```
    */
   async createRoom(params: {
@@ -341,7 +341,7 @@ export class ChatClient extends EventEmitter<ChatEvents> {
    *   roomName: `call-${conversationId}`,
    *   participantName: 'John Doe',
    * });
-   * // Connect to room using LiveKit client SDK with room.wsUrl and room.token
+   * // Connect to room using voice client SDK with room.wsUrl and room.token
    * ```
    */
   async joinRoom(params: {
@@ -361,7 +361,7 @@ export class ChatClient extends EventEmitter<ChatEvents> {
    * ```typescript
    * // Start a video call
    * const room = await chat.startCall(conversationId, 'video');
-   * // room contains { name, wsUrl, token } for LiveKit
+   * // room contains { name, wsUrl, token } for Vero Voice
    * ```
    */
   async startCall(
@@ -385,7 +385,7 @@ export class ChatClient extends EventEmitter<ChatEvents> {
    * ```typescript
    * chat.on('call:ring', async ({ conversationId, roomName, callType }) => {
    *   const room = await chat.acceptCall(conversationId, roomName);
-   *   // Connect to room using LiveKit client SDK
+   *   // Connect to room using voice client SDK
    * });
    * ```
    */

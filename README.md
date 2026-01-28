@@ -8,7 +8,7 @@ Real-time messaging SDK for VeroAI applications. Provides HTTP API client, WebSo
 - **Typing indicators** - Show when users are typing
 - **Presence tracking** - Online/away/busy/offline status
 - **Read receipts** - Track message read status
-- **Voice/video calls** - LiveKit integration for WebRTC calls
+- **Voice/video calls** - Vero Voice integration for WebRTC calls
 - **AI agents** - Built-in support for AI agent conversations
 - **React hooks** - Ready-to-use hooks for React applications
 - **TypeScript** - Full type safety
@@ -241,9 +241,9 @@ await chat.removeAgentFromConversation(conversationId);
 await chat.toggleAgent(conversationId, true);
 ```
 
-#### Voice/Video Calls (LiveKit)
+#### Voice/Video Calls
 
-The SDK integrates with LiveKit for WebRTC voice and video calls. Call signaling (ring, accept, reject, end) is handled via WebSocket, while actual media streams go through LiveKit.
+The SDK integrates with Vero Voice for WebRTC voice and video calls. Call signaling (ring, accept, reject, end) is handled via WebSocket, while actual media streams go through Vero Voice.
 
 ```typescript
 // Create a room
@@ -268,7 +268,7 @@ const room = await chat.startCall(conversationId, 'video'); // 'audio' | 'video'
 // Accept an incoming call
 chat.on('call:ring', async ({ conversationId, roomName, callType }) => {
   const room = await chat.acceptCall(conversationId, roomName, 'My Name');
-  // Connect to LiveKit using room.wsUrl and room.token
+  // Connect to Vero Voice using room.wsUrl and room.token
 });
 
 // Reject a call
@@ -508,7 +508,7 @@ interface CallEvent {
   roomName?: string;
 }
 
-// Room info (for LiveKit)
+// Room info (for Vero Voice)
 interface RoomInfo {
   name: string;
   wsUrl: string;
