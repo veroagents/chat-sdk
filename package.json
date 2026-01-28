@@ -52,10 +52,11 @@
     "ai",
     "agents"
   ],
+  "homepage": "https://veroai.dev",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/veroai/veroai.git",
+    "url": "https://github.com/veroai/chat-sdk.git",
     "directory": "packages/chat"
   }
 }
