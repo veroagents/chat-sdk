@@ -60,6 +60,11 @@ export type {
   // Configuration
   ChatClientConfig,
 
+  // Token generation (server-side)
+  GenerateTokenOptions,
+  GenerateTokenResult,
+  ChatUser,
+
   // User types
   User,
   PresenceStatus,

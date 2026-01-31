@@ -19,6 +19,8 @@ import type {
   User,
   PresenceStatus,
   AgentConfig,
+  GenerateTokenOptions,
+  GenerateTokenResult,
 } from './types';
 
 /**
@@ -65,6 +67,7 @@ export class ChatClient extends EventEmitter<ChatEvents> {
     this.api = new ChatApi({
       apiUrl: config.apiUrl,
       getToken: this.tokenGetter,
+      apiKey: config.apiKey,
     });
 
     // Initialize WebSocket if URL provided
@@ -122,6 +125,37 @@ export class ChatClient extends EventEmitter<ChatEvents> {
    */
   setToken(token: string): void {
     this.config.token = token;
+  }
+
+  // ============================================================================
+  // Token Generation (Server-side only)
+  // ============================================================================
+
+  /**
+   * Generate a chat token for a user (server-side only)
+   *
+   * This method is used by client backends to generate tokens for their users.
+   * Requires an API key to be configured.
+   *
+   * @example
+   * ```typescript
+   * // On your backend
+   * const chat = new ChatClient({
+   *   apiUrl: 'https://chat-api.veroai.dev',
+   *   apiKey: process.env.VERO_API_KEY,
+   * });
+   *
+   * const { token, expiresAt } = await chat.generateToken({
+   *   userId: user.id,
+   *   name: user.displayName,
+   *   avatar: user.avatarUrl,
+   * });
+   *
+   * // Return token to your frontend
+   * ```
+   */
+  async generateToken(options: GenerateTokenOptions): Promise<GenerateTokenResult> {
+    return this.api.generateToken(options);
   }
 
   // ============================================================================

@@ -15,11 +15,15 @@ import type {
   UserPresence,
   PresenceStatus,
   AgentConfig,
+  GenerateTokenOptions,
+  GenerateTokenResult,
 } from '../types';
 
 export interface ApiClientConfig {
   apiUrl: string;
   getToken: () => string | null | Promise<string | null>;
+  /** API key for server-side token generation */
+  apiKey?: string;
 }
 
 /**
@@ -28,10 +32,63 @@ export interface ApiClientConfig {
 export class ChatApi {
   private apiUrl: string;
   private getToken: () => string | null | Promise<string | null>;
+  private apiKey?: string;
 
   constructor(config: ApiClientConfig) {
     this.apiUrl = config.apiUrl.replace(/\/$/, '');
     this.getToken = config.getToken;
+    this.apiKey = config.apiKey;
+  }
+
+  // ============================================================================
+  // Token Generation (Server-side only)
+  // ============================================================================
+
+  /**
+   * Generate a chat token for a user (server-side only)
+   *
+   * This method is used by client backends to generate tokens for their users.
+   * Requires an API key to be configured.
+   *
+   * @example
+   * ```typescript
+   * // On your backend
+   * const chatApi = new ChatApi({
+   *   apiUrl: 'https://chat-api.veroai.dev',
+   *   apiKey: process.env.VERO_API_KEY,
+   *   getToken: () => null, // Not needed for token generation
+   * });
+   *
+   * const { token } = await chatApi.generateToken({
+   *   userId: user.id,
+   *   name: user.displayName,
+   *   avatar: user.avatarUrl,
+   * });
+   *
+   * // Return token to your frontend
+   * ```
+   */
+  async generateToken(options: GenerateTokenOptions): Promise<GenerateTokenResult> {
+    if (!this.apiKey) {
+      throw new Error('API key is required for token generation. Set apiKey in config.');
+    }
+
+    const response = await fetch(`${this.apiUrl}/v1/auth/token`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${this.apiKey}`,
+      },
+      body: JSON.stringify({
+        userId: options.userId,
+        name: options.name,
+        avatar: options.avatar,
+        metadata: options.metadata,
+        expiresIn: options.expiresIn,
+      }),
+    });
+
+    return this.handleResponse<GenerateTokenResult>(response);
   }
 
   private async getHeaders(): Promise<HeadersInit> {
@@ -410,6 +467,8 @@ interface RawMessage {
   content: string;
   message_type: string;
   sender_id?: string;
+  sender_name?: string;
+  sender_avatar?: string;
   sender?: RawUser;
   read_by?: RawReadReceipt[];
   metadata?: Record<string, unknown>;
@@ -499,6 +558,8 @@ function transformMessage(raw: RawMessage): Message {
     content: raw.content,
     messageType: raw.message_type as Message['messageType'],
     senderId: raw.sender_id,
+    senderName: raw.sender_name,
+    senderAvatar: raw.sender_avatar,
     sender: raw.sender ? transformUser(raw.sender) : undefined,
     readBy: raw.read_by?.map((r) => ({
       userId: r.user_id,

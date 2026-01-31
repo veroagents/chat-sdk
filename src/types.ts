@@ -15,6 +15,8 @@ export interface ChatClientConfig {
   token?: string;
   /** Token getter function for dynamic token retrieval */
   getToken?: () => string | null | Promise<string | null>;
+  /** API key for server-side token generation (use with generateToken) */
+  apiKey?: string;
   /** Auto-connect to WebSocket on initialization */
   autoConnect?: boolean;
   /** Auto-reconnect on disconnect */
@@ -23,6 +25,51 @@ export interface ChatClientConfig {
   reconnectInterval?: number;
   /** Max reconnect attempts */
   maxReconnectAttempts?: number;
+}
+
+// ============================================================================
+// Token Generation (Server-side)
+// ============================================================================
+
+/**
+ * Options for generating a chat token
+ * Used by client backends to generate tokens for their users
+ */
+export interface GenerateTokenOptions {
+  /** User ID from client's system */
+  userId: string;
+  /** Display name for the user */
+  name: string;
+  /** Avatar URL */
+  avatar?: string;
+  /** Custom metadata to include in token */
+  metadata?: Record<string, unknown>;
+  /** Token expiration in seconds (default: 3600, max: 30 days) */
+  expiresIn?: number;
+}
+
+/**
+ * Result of token generation
+ */
+export interface GenerateTokenResult {
+  /** JWT token for chat operations */
+  token: string;
+  /** Unix timestamp when token expires */
+  expiresAt: number;
+}
+
+/**
+ * User context extracted from chat token
+ */
+export interface ChatUser {
+  /** User ID from client's system */
+  id: string;
+  /** Display name */
+  name: string;
+  /** Avatar URL */
+  avatar?: string;
+  /** Custom metadata */
+  metadata?: Record<string, unknown>;
 }
 
 // ============================================================================
@@ -102,6 +149,11 @@ export interface Message {
   content: string;
   messageType: MessageType;
   senderId?: string;
+  /** Denormalized sender display name (from token at write time) */
+  senderName?: string;
+  /** Denormalized sender avatar URL (from token at write time) */
+  senderAvatar?: string;
+  /** @deprecated Use senderName/senderAvatar instead. Full sender object (requires lookup) */
   sender?: User;
   readBy?: ReadReceipt[];
   metadata?: Record<string, unknown>;
