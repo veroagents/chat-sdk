@@ -1,89 +1,44 @@
 /**
  * usePresence Hook
  *
- * Track and manage user presence/online status
+ * Track user presence/online status via WebSocket events.
+ * The chat backend is user-agnostic - presence is tracked via real-time events only.
  */
 
 import { useState, useEffect, useCallback } from 'react';
 import { useChat } from '../provider';
-import type { User, PresenceStatus, PresenceEvent } from '../../types';
+import type { PresenceStatus, PresenceEvent } from '../../types';
 
 export interface UsePresenceReturn {
-  /** Online users */
-  onlineUsers: User[];
-  /** Whether loading online users */
-  isLoading: boolean;
+  /** Map of userId to their presence status */
+  presenceMap: Map<string, PresenceStatus>;
   /** Get presence status for a specific user */
   getUserStatus: (userId: string) => PresenceStatus;
-  /** Refresh online users list */
-  refresh: () => Promise<void>;
-  /** Error if any */
-  error: Error | null;
 }
 
 /**
- * usePresence - Track online users and presence
+ * usePresence - Track user presence via WebSocket events
+ *
+ * Note: The chat backend is user-agnostic. This hook only tracks presence
+ * updates received via WebSocket. To know who is online, you need to
+ * implement presence tracking in your own system.
  *
  * @example
  * ```tsx
- * function OnlineUsers() {
- *   const { onlineUsers, getUserStatus } = usePresence();
+ * function UserStatus({ userId }: { userId: string }) {
+ *   const { getUserStatus } = usePresence();
+ *   const status = getUserStatus(userId);
  *
- *   return (
- *     <div>
- *       {onlineUsers.map(user => (
- *         <div key={user.id}>
- *           {user.firstName} - {getUserStatus(user.id)}
- *         </div>
- *       ))}
- *     </div>
- *   );
+ *   return <span className={`status-${status}`}>{status}</span>;
  * }
  * ```
  */
 export function usePresence(): UsePresenceReturn {
   const { client } = useChat();
 
-  const [onlineUsers, setOnlineUsers] = useState<User[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState<Error | null>(null);
   const [presenceMap, setPresenceMap] = useState<Map<string, PresenceStatus>>(new Map());
 
-  // Fetch online users
-  const refresh = useCallback(async () => {
-    if (!client) return;
-
-    setIsLoading(true);
-    setError(null);
-
-    try {
-      const users = await client.getOnlineUsers();
-      setOnlineUsers(users);
-
-      // Update presence map
-      const newMap = new Map<string, PresenceStatus>();
-      users.forEach((user) => {
-        if (user.status) {
-          newMap.set(user.id, user.status);
-        }
-      });
-      setPresenceMap(newMap);
-    } catch (err) {
-      setError(err instanceof Error ? err : new Error(String(err)));
-      console.error('[usePresence] Failed to fetch online users:', err);
-    } finally {
-      setIsLoading(false);
-    }
-  }, [client]);
-
-  // Initial fetch
-  useEffect(() => {
-    if (client) {
-      refresh();
-    }
-  }, [client, refresh]);
-
-  // Listen for presence updates
+  // Listen for presence updates via WebSocket
   useEffect(() => {
     if (!client) return;
 
@@ -93,23 +48,6 @@ export function usePresence(): UsePresenceReturn {
         newMap.set(userId, status);
         return newMap;
       });
-
-      // Update online users list
-      if (status === 'offline') {
-        setOnlineUsers((prev) => prev.filter((u) => u.id !== userId));
-      } else {
-        // If user came online, refresh to get their info
-        setOnlineUsers((prev) => {
-          const exists = prev.some((u) => u.id === userId);
-          if (!exists) {
-            // Trigger a refresh to get the new online user
-            refresh();
-          }
-          return prev.map((u) =>
-            u.id === userId ? { ...u, status } : u
-          );
-        });
-      }
     };
 
     client.on('presence:updated', handlePresenceUpdate);
@@ -117,7 +55,7 @@ export function usePresence(): UsePresenceReturn {
     return () => {
       client.off('presence:updated', handlePresenceUpdate);
     };
-  }, [client, refresh]);
+  }, [client]);
 
   // Get status for a specific user
   const getUserStatus = useCallback(
@@ -128,16 +66,13 @@ export function usePresence(): UsePresenceReturn {
   );
 
   return {
-    onlineUsers,
-    isLoading,
+    presenceMap,
     getUserStatus,
-    refresh,
-    error,
   };
 }
 
 /**
- * useUserPresence - Track presence for a specific user
+ * useUserPresence - Track presence for a specific user via WebSocket events
  */
 export function useUserPresence(userId: string | undefined): {
   status: PresenceStatus;
@@ -149,14 +84,7 @@ export function useUserPresence(userId: string | undefined): {
   useEffect(() => {
     if (!client || !userId) return;
 
-    // Fetch initial status
-    client.getUser(userId)
-      .then((user) => {
-        setStatus(user.status || 'offline');
-      })
-      .catch(console.error);
-
-    // Listen for updates
+    // Listen for updates via WebSocket
     const handlePresenceUpdate = ({ userId: eventUserId, status: newStatus }: PresenceEvent) => {
       if (eventUserId === userId) {
         setStatus(newStatus);

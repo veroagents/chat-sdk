@@ -12,7 +12,6 @@ import type {
   GetMessagesParams,
   PaginatedMessages,
   User,
-  UserPresence,
   PresenceStatus,
   AgentConfig,
   GenerateTokenOptions,
@@ -226,73 +225,6 @@ export class ChatApi {
     });
     const data = await this.handleResponse<{ message: RawMessage }>(response);
     return transformMessage(data.message);
-  }
-
-  // ============================================================================
-  // Users
-  // ============================================================================
-
-  /**
-   * List all users (contacts)
-   */
-  async listUsers(options?: { includeVirtual?: boolean }): Promise<User[]> {
-    const searchParams = new URLSearchParams();
-    if (options?.includeVirtual) searchParams.set('include_virtual', 'true');
-
-    const url = `${this.apiUrl}/v1/chat/users?${searchParams}`;
-    const response = await fetch(url, {
-      headers: await this.getHeaders(),
-    });
-    const data = await this.handleResponse<{ users: RawUser[] }>(response);
-    return data.users.map(transformUser);
-  }
-
-  /**
-   * Get online users
-   */
-  async getOnlineUsers(): Promise<User[]> {
-    const response = await fetch(`${this.apiUrl}/v1/chat/users/online`, {
-      headers: await this.getHeaders(),
-    });
-    const data = await this.handleResponse<{ users: RawUser[] }>(response);
-    return data.users.map(transformUser);
-  }
-
-  /**
-   * Get current user profile
-   */
-  async getCurrentUser(): Promise<User> {
-    const response = await fetch(`${this.apiUrl}/v1/chat/users/me`, {
-      headers: await this.getHeaders(),
-    });
-    const data = await this.handleResponse<{ user: RawUser }>(response);
-    return transformUser(data.user);
-  }
-
-  /**
-   * Get a specific user
-   */
-  async getUser(userId: string): Promise<User> {
-    const response = await fetch(`${this.apiUrl}/v1/chat/users/${userId}`, {
-      headers: await this.getHeaders(),
-    });
-    const data = await this.handleResponse<{ user: RawUser }>(response);
-    return transformUser(data.user);
-  }
-
-  /**
-   * Update current user's presence status
-   */
-  async updateStatus(status: PresenceStatus, statusMessage?: string): Promise<void> {
-    const response = await fetch(`${this.apiUrl}/v1/chat/users/me/status`, {
-      method: 'PUT',
-      headers: await this.getHeaders(),
-      body: JSON.stringify({
-        status,
-        status_message: statusMessage,
-      }),
-    });
-    await this.handleResponse<void>(response);
   }
 
   // ============================================================================

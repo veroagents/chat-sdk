@@ -6,7 +6,7 @@
 
 import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
 import { ChatClient } from '../client';
-import type { ChatClientConfig, Conversation, Message, User, PresenceStatus } from '../types';
+import type { ChatClientConfig, Conversation } from '../types';
 
 // ============================================================================
 // Context Types
@@ -17,8 +17,6 @@ export interface ChatContextValue {
   client: ChatClient | null;
   /** Whether the WebSocket is connected */
   isConnected: boolean;
-  /** Current user profile */
-  currentUser: User | null;
   /** List of conversations */
   conversations: Conversation[];
   /** Loading state for conversations */
@@ -29,8 +27,6 @@ export interface ChatContextValue {
   connect: () => Promise<void>;
   /** Disconnect from WebSocket */
   disconnect: () => void;
-  /** Update current user's status */
-  updateStatus: (status: PresenceStatus, statusMessage?: string) => Promise<void>;
 }
 
 const ChatContext = createContext<ChatContextValue | null>(null);
@@ -45,8 +41,6 @@ export interface ChatProviderProps {
   config: ChatClientConfig;
   /** Auto-fetch conversations on mount */
   autoFetchConversations?: boolean;
-  /** Auto-fetch current user on mount */
-  autoFetchCurrentUser?: boolean;
 }
 
 // ============================================================================
@@ -64,7 +58,7 @@ export interface ChatProviderProps {
  *       config={{
  *         apiUrl: 'https://api.veroai.dev',
  *         wsUrl: 'wss://ws.veroai.dev',
- *         token: authToken,
+ *         getToken: () => myAuthToken,
  *       }}
  *     >
  *       <ChatApp />
@@ -77,11 +71,9 @@ export function ChatProvider({
   children,
   config,
   autoFetchConversations = true,
-  autoFetchCurrentUser = true,
 }: ChatProviderProps) {
   const [client, setClient] = useState<ChatClient | null>(null);
   const [isConnected, setIsConnected] = useState(false);
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [isLoadingConversations, setIsLoadingConversations] = useState(false);
   const clientRef = useRef<ChatClient | null>(null);
@@ -133,15 +125,6 @@ export function ChatProvider({
     };
   }, [config.apiUrl, config.wsUrl, config.token]);
 
-  // Fetch current user
-  useEffect(() => {
-    if (!client || !autoFetchCurrentUser) return;
-
-    client.getCurrentUser()
-      .then(setCurrentUser)
-      .catch(console.error);
-  }, [client, autoFetchCurrentUser]);
-
   // Fetch conversations
   const refreshConversations = useCallback(async () => {
     if (!client) return;
@@ -175,29 +158,14 @@ export function ChatProvider({
     client?.disconnect();
   }, [client]);
 
-  // Update status
-  const updateStatus = useCallback(
-    async (status: PresenceStatus, statusMessage?: string) => {
-      if (client) {
-        await client.updateStatus(status, statusMessage);
-        setCurrentUser((prev) =>
-          prev ? { ...prev, status, statusMessage } : prev
-        );
-      }
-    },
-    [client]
-  );
-
   const value: ChatContextValue = {
     client,
     isConnected,
-    currentUser,
     conversations,
     isLoadingConversations,
     refreshConversations,
     connect,
     disconnect,
-    updateStatus,
   };
 
   return <ChatContext.Provider value={value}>{children}</ChatContext.Provider>;

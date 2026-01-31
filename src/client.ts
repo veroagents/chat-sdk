@@ -16,8 +16,6 @@ import type {
   SendMessageParams,
   GetMessagesParams,
   PaginatedMessages,
-  User,
-  PresenceStatus,
   AgentConfig,
   GenerateTokenOptions,
   GenerateTokenResult,
@@ -264,49 +262,6 @@ export class ChatClient extends EventEmitter<ChatEvents> {
    */
   sendTypingStop(conversationId: string): void {
     this.ws?.sendTypingStop(conversationId);
-  }
-
-  // ============================================================================
-  // Users & Presence
-  // ============================================================================
-
-  /**
-   * List all users (contacts)
-   */
-  async listUsers(options?: { includeVirtual?: boolean }): Promise<User[]> {
-    return this.api.listUsers(options);
-  }
-
-  /**
-   * Get online users
-   */
-  async getOnlineUsers(): Promise<User[]> {
-    return this.api.getOnlineUsers();
-  }
-
-  /**
-   * Get current user profile
-   */
-  async getCurrentUser(): Promise<User> {
-    return this.api.getCurrentUser();
-  }
-
-  /**
-   * Get a specific user
-   */
-  async getUser(userId: string): Promise<User> {
-    return this.api.getUser(userId);
-  }
-
-  /**
-   * Update current user's presence status
-   */
-  async updateStatus(status: PresenceStatus, statusMessage?: string): Promise<void> {
-    // Update via HTTP API
-    await this.api.updateStatus(status, statusMessage);
-
-    // Also notify via WebSocket for real-time propagation
-    this.ws?.updatePresence(status, statusMessage);
   }
 
   // ============================================================================
