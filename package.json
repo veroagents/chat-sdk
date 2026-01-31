@@ -56,7 +56,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/veroai/chat-sdk.git",
+    "url": "git+https://github.com/veroai/chat-sdk.git",
     "directory": "packages/chat"
   }
 }
