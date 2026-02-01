@@ -168,17 +168,53 @@ export class WebSocketManager extends EventEmitter<ChatEvents> {
   }
 
   /**
-   * Subscribe to a conversation for real-time updates
+   * Subscribe to conversations for real-time updates
    */
   subscribeToConversation(conversationId: string): void {
-    this.send('subscribe', { conversationId });
+    this.subscribeToConversations([conversationId]);
+  }
+
+  /**
+   * Subscribe to multiple conversations for real-time updates
+   */
+  subscribeToConversations(conversationIds: string[]): void {
+    // Server expects { type: "subscribe", conversationIds: [...] } at top level (not in payload)
+    const message = JSON.stringify({
+      type: 'subscribe',
+      conversationIds,
+      timestamp: new Date().toISOString(),
+    });
+
+    if (this.isConnected()) {
+      this.ws!.send(message);
+    } else {
+      this.pendingMessages.push(message);
+    }
   }
 
   /**
    * Unsubscribe from a conversation
    */
   unsubscribeFromConversation(conversationId: string): void {
-    this.send('unsubscribe', { conversationId });
+    this.unsubscribeFromConversations([conversationId]);
+  }
+
+  /**
+   * Unsubscribe from multiple conversations
+   */
+  unsubscribeFromConversations(conversationIds: string[]): void {
+    // Server expects { type: "unsubscribe", conversationIds: [...] } at top level (not in payload)
+    const message = JSON.stringify({
+      type: 'unsubscribe',
+      conversationIds,
+      timestamp: new Date().toISOString(),
+    });
+
+    if (this.isConnected()) {
+      this.ws!.send(message);
+    } else {
+      this.pendingMessages.push(message);
+    }
   }
 
   /**
