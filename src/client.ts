@@ -52,27 +52,31 @@ export class ChatClient extends EventEmitter<ChatEvents> {
   private api: ChatApi;
   private ws: WebSocketManager | null = null;
   private config: ChatClientConfig;
-  private tokenGetter: () => string | null | Promise<string | null>;
+  private apiTokenGetter: () => string | null | Promise<string | null>;
+  private wsTokenGetter: () => string | null | Promise<string | null>;
 
   constructor(config: ChatClientConfig) {
     super();
     this.config = config;
 
-    // Create token getter
-    this.tokenGetter = config.getToken || (() => config.token || null);
+    // Create token getters
+    // For API: prefer getApiToken, fall back to getToken, then static token
+    this.apiTokenGetter = config.getApiToken || config.getToken || (() => config.token || null);
+    // For WebSocket: prefer getWsToken, fall back to getToken, then static token
+    this.wsTokenGetter = config.getWsToken || config.getToken || (() => config.token || null);
 
-    // Initialize API client
+    // Initialize API client with API-specific token getter
     this.api = new ChatApi({
       apiUrl: config.apiUrl,
-      getToken: this.tokenGetter,
+      getToken: this.apiTokenGetter,
       apiKey: config.apiKey,
     });
 
-    // Initialize WebSocket if URL provided
+    // Initialize WebSocket with WebSocket-specific token getter
     if (config.wsUrl) {
       this.ws = new WebSocketManager({
         url: config.wsUrl,
-        getToken: this.tokenGetter,
+        getToken: this.wsTokenGetter,
         autoReconnect: config.autoReconnect ?? true,
         reconnectInterval: config.reconnectInterval,
         maxReconnectAttempts: config.maxReconnectAttempts,

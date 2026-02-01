@@ -11,10 +11,22 @@ export interface ChatClientConfig {
   apiUrl: string;
   /** WebSocket URL for real-time events (e.g., wss://ws.veroai.dev) */
   wsUrl?: string;
-  /** Authentication token (JWT) */
+  /** Authentication token (JWT) - used for both API and WebSocket if separate tokens not provided */
   token?: string;
-  /** Token getter function for dynamic token retrieval */
+  /** Token getter function for dynamic token retrieval - used for both API and WebSocket if separate getters not provided */
   getToken?: () => string | null | Promise<string | null>;
+  /**
+   * Token getter specifically for API calls
+   * Use this when your API server and WebSocket server use different auth tokens
+   * (e.g., API uses accessToken from your auth server, WebSocket uses chatToken from VeroAI)
+   */
+  getApiToken?: () => string | null | Promise<string | null>;
+  /**
+   * Token getter specifically for WebSocket connections
+   * Use this when your API server and WebSocket server use different auth tokens
+   * Falls back to getToken if not provided
+   */
+  getWsToken?: () => string | null | Promise<string | null>;
   /** API key for server-side token generation (use with generateToken) */
   apiKey?: string;
   /** Auto-connect to WebSocket on initialization */
