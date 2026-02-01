@@ -206,9 +206,8 @@ export interface AgentConfig {
   id: string;
   name: string;
   description?: string;
-  jobRole?: string;
-  systemPrompt?: string;
-  isActive: boolean;
+  avatarUrl?: string;
+  model?: string;
 }
 
 // ============================================================================

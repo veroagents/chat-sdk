@@ -277,11 +277,11 @@ export class ChatApi {
    * List available agents
    */
   async listAgents(): Promise<AgentConfig[]> {
-    const response = await fetch(`${this.apiUrl}/v1/agent-configurations`, {
+    const response = await fetch(`${this.apiUrl}/v1/chat/agents`, {
       headers: await this.getHeaders(),
     });
-    const data = await this.handleResponse<AgentConfig[]>(response);
-    return data;
+    const data = await this.handleResponse<{ agents: AgentConfig[]; total: number }>(response);
+    return data.agents;
   }
 
   // ============================================================================
