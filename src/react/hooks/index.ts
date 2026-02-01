@@ -6,4 +6,8 @@ export { useConversation } from './useConversation';
 export type { UseConversationOptions, UseConversationReturn } from './useConversation';
 
 export { usePresence, useUserPresence } from './usePresence';
-export type { UsePresenceReturn } from './usePresence';
+export type {
+  UsePresenceOptions,
+  UsePresenceReturn,
+  UseUserPresenceOptions,
+} from './usePresence';

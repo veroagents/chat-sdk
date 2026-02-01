@@ -17,5 +17,7 @@ export {
 export type {
   UseConversationOptions,
   UseConversationReturn,
+  UsePresenceOptions,
   UsePresenceReturn,
+  UseUserPresenceOptions,
 } from './hooks';
