@@ -93,6 +93,7 @@ export interface User {
   email?: string;
   firstName?: string;
   lastName?: string;
+  avatar?: string;
   isVirtual?: boolean;
   agentConfigId?: string;
   status?: PresenceStatus;

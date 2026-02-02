@@ -357,6 +357,7 @@ interface RawUser {
   email?: string;
   first_name?: string;
   last_name?: string;
+  avatar?: string;
   is_virtual?: boolean;
   agent_config_id?: string;
   status?: PresenceStatus;
@@ -447,6 +448,7 @@ function transformUser(raw: RawUser): User {
     email: raw.email,
     firstName: raw.first_name,
     lastName: raw.last_name,
+    avatar: raw.avatar,
     isVirtual: raw.is_virtual,
     agentConfigId: raw.agent_config_id,
     status: raw.status,
