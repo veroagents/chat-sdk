@@ -233,7 +233,11 @@ export type WebSocketEventType =
   | 'call:ring'
   | 'call:accept'
   | 'call:reject'
-  | 'call:end';
+  | 'call:end'
+  | 'stream:start'
+  | 'stream:chunk'
+  | 'stream:end'
+  | 'stream:error';
 
 export interface WebSocketMessage<T = unknown> {
   type: WebSocketEventType;
@@ -317,4 +321,116 @@ export interface ChatEvents {
   'call:accept': (event: CallEvent) => void;
   'call:reject': (event: CallEvent) => void;
   'call:end': (event: CallEvent) => void;
+  // Streaming events
+  'stream:start': (event: StreamStartEvent) => void;
+  'stream:chunk': (event: StreamChunkEvent) => void;
+  'stream:end': (event: StreamEndEvent) => void;
+  'stream:error': (event: StreamErrorEvent) => void;
+}
+
+// ============================================================================
+// Streaming Types
+// ============================================================================
+
+/**
+ * Request to start an agent streaming session
+ */
+export interface AgentStreamRequest {
+  /** Request type identifier */
+  type: 'agent:stream';
+  /** Unique execution identifier */
+  executionId: string;
+  /** Conversation ID */
+  conversationId: string;
+  /** User message to process */
+  message: string;
+  /** Optional agent config ID (uses default if not specified) */
+  agentConfigId?: string;
+}
+
+/**
+ * Request to cancel an active stream
+ */
+export interface AgentStreamCancelRequest {
+  /** Request type identifier */
+  type: 'agent:stream:cancel';
+  /** Execution ID to cancel */
+  executionId: string;
+}
+
+/**
+ * Streaming message types sent from server
+ */
+export type StreamMessageType =
+  | 'stream:start'
+  | 'stream:chunk'
+  | 'stream:end'
+  | 'stream:error';
+
+/**
+ * Stream start event
+ */
+export interface StreamStartEvent {
+  executionId: string;
+  conversationId: string;
+}
+
+/**
+ * Stream chunk event - contains a piece of the response
+ */
+export interface StreamChunkEvent {
+  executionId: string;
+  conversationId: string;
+  /** The new chunk of text */
+  chunk: string;
+  /** Full accumulated response so far */
+  accumulated: string;
+}
+
+/**
+ * Stream end event - streaming completed
+ */
+export interface StreamEndEvent {
+  executionId: string;
+  conversationId: string;
+  /** Final accumulated response */
+  accumulated: string;
+  /** Optional metadata about the response */
+  metadata?: StreamMetadata;
+}
+
+/**
+ * Stream error event
+ */
+export interface StreamErrorEvent {
+  executionId: string;
+  conversationId: string;
+  /** Error message */
+  error: string;
+}
+
+/**
+ * Metadata about a streaming response
+ */
+export interface StreamMetadata {
+  /** Total tokens used */
+  tokensUsed?: number;
+  /** Model used */
+  model?: string;
+  /** Latency in milliseconds */
+  latencyMs?: number;
+}
+
+/**
+ * Streaming state for a conversation
+ */
+export interface StreamingState {
+  /** Whether currently streaming */
+  isStreaming: boolean;
+  /** Current execution ID if streaming */
+  executionId?: string;
+  /** Accumulated response text */
+  accumulated: string;
+  /** Error if any */
+  error?: string;
 }

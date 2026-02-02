@@ -11,3 +11,6 @@ export type {
   UsePresenceReturn,
   UseUserPresenceOptions,
 } from './usePresence';
+
+export { useStreamingChat } from './useStreamingChat';
+export type { UseStreamingChatOptions, UseStreamingChatReturn } from './useStreamingChat';

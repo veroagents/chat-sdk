@@ -18,6 +18,10 @@ import type {
   Message,
   Conversation,
   Participant,
+  StreamStartEvent,
+  StreamChunkEvent,
+  StreamEndEvent,
+  StreamErrorEvent,
 } from './types';
 
 export interface WebSocketConfig {
@@ -237,6 +241,58 @@ export class WebSocketManager extends EventEmitter<ChatEvents> {
     this.send('call', { conversationId, action, callType, roomName });
   }
 
+  // ============================================================================
+  // Streaming Methods
+  // ============================================================================
+
+  /**
+   * Request a streaming agent response
+   * Returns execution ID that can be used to track/cancel the stream
+   */
+  requestStream(
+    conversationId: string,
+    message: string,
+    agentConfigId?: string
+  ): string {
+    const executionId = crypto.randomUUID();
+
+    const streamRequest = {
+      type: 'agent:stream',
+      executionId,
+      conversationId,
+      message,
+      ...(agentConfigId && { agentConfigId }),
+    };
+
+    const rawMessage = JSON.stringify({
+      ...streamRequest,
+      timestamp: new Date().toISOString(),
+    });
+
+    if (this.isConnected()) {
+      this.ws!.send(rawMessage);
+    } else {
+      this.pendingMessages.push(rawMessage);
+    }
+
+    return executionId;
+  }
+
+  /**
+   * Cancel an active stream
+   */
+  cancelStream(executionId: string): void {
+    const cancelRequest = JSON.stringify({
+      type: 'agent:stream:cancel',
+      executionId,
+      timestamp: new Date().toISOString(),
+    });
+
+    if (this.isConnected()) {
+      this.ws!.send(cancelRequest);
+    }
+  }
+
   private handleClose(reason?: string): void {
     this.stopHeartbeat();
     const wasConnected = this.state === 'connected';
@@ -351,6 +407,23 @@ export class WebSocketManager extends EventEmitter<ChatEvents> {
 
         case 'call:end':
           this.emit('call:end', message.payload as CallEvent);
+          break;
+
+        // Streaming events
+        case 'stream:start':
+          this.emit('stream:start', message.payload as StreamStartEvent);
+          break;
+
+        case 'stream:chunk':
+          this.emit('stream:chunk', message.payload as StreamChunkEvent);
+          break;
+
+        case 'stream:end':
+          this.emit('stream:end', message.payload as StreamEndEvent);
+          break;
+
+        case 'stream:error':
+          this.emit('stream:error', message.payload as StreamErrorEvent);
           break;
       }
     } catch (error) {

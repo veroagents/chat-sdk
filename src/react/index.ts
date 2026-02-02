@@ -13,6 +13,7 @@ export {
   useConversation,
   usePresence,
   useUserPresence,
+  useStreamingChat,
 } from './hooks';
 export type {
   UseConversationOptions,
@@ -20,4 +21,6 @@ export type {
   UsePresenceOptions,
   UsePresenceReturn,
   UseUserPresenceOptions,
+  UseStreamingChatOptions,
+  UseStreamingChatReturn,
 } from './hooks';

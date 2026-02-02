@@ -410,6 +410,53 @@ export class ChatClient extends EventEmitter<ChatEvents> {
   }
 
   // ============================================================================
+  // Agent Streaming
+  // ============================================================================
+
+  /**
+   * Send a streaming message to the agent
+   *
+   * Returns an execution ID that can be used to track/cancel the stream.
+   * Listen to stream:start, stream:chunk, stream:end, stream:error events
+   * to receive the streaming response.
+   *
+   * @example
+   * ```typescript
+   * const executionId = chat.sendStreamingMessage(conversationId, 'Hello!');
+   *
+   * chat.on('stream:chunk', ({ executionId: id, chunk, accumulated }) => {
+   *   if (id === executionId) {
+   *     console.log('Chunk:', chunk);
+   *     console.log('Total:', accumulated);
+   *   }
+   * });
+   *
+   * chat.on('stream:end', ({ executionId: id, accumulated, metadata }) => {
+   *   if (id === executionId) {
+   *     console.log('Complete response:', accumulated);
+   *   }
+   * });
+   * ```
+   */
+  sendStreamingMessage(
+    conversationId: string,
+    content: string,
+    agentConfigId?: string
+  ): string {
+    if (!this.ws) {
+      throw new Error('WebSocket not configured');
+    }
+    return this.ws.requestStream(conversationId, content, agentConfigId);
+  }
+
+  /**
+   * Cancel an active streaming response
+   */
+  cancelStream(executionId: string): void {
+    this.ws?.cancelStream(executionId);
+  }
+
+  // ============================================================================
   // Internal
   // ============================================================================
 
@@ -435,5 +482,11 @@ export class ChatClient extends EventEmitter<ChatEvents> {
     this.ws.on('call:accept', (event) => this.emit('call:accept', event));
     this.ws.on('call:reject', (event) => this.emit('call:reject', event));
     this.ws.on('call:end', (event) => this.emit('call:end', event));
+
+    // Streaming events
+    this.ws.on('stream:start', (event) => this.emit('stream:start', event));
+    this.ws.on('stream:chunk', (event) => this.emit('stream:chunk', event));
+    this.ws.on('stream:end', (event) => this.emit('stream:end', event));
+    this.ws.on('stream:error', (event) => this.emit('stream:error', event));
   }
 }

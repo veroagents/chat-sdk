@@ -100,6 +100,17 @@ export type {
   CallType,
   CallEvent,
 
+  // Streaming types
+  AgentStreamRequest,
+  AgentStreamCancelRequest,
+  StreamMessageType,
+  StreamStartEvent,
+  StreamChunkEvent,
+  StreamEndEvent,
+  StreamErrorEvent,
+  StreamMetadata,
+  StreamingState,
+
   // Event emitter types
   ChatEvents,
 
