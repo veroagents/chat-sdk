@@ -221,6 +221,7 @@ export class ChatApi {
         content: params.content,
         message_type: params.messageType || 'text',
         metadata: params.metadata,
+        skip_agent_trigger: params.skipAgentTrigger,
       }),
     });
     const data = await this.handleResponse<{ message: RawMessage }>(response);

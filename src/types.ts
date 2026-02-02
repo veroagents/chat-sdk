@@ -182,6 +182,8 @@ export interface SendMessageParams {
   content: string;
   messageType?: MessageType;
   metadata?: Record<string, unknown>;
+  /** Skip automatic agent triggering (used when client handles streaming directly) */
+  skipAgentTrigger?: boolean;
 }
 
 export interface GetMessagesParams {
