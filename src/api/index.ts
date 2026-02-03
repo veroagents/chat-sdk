@@ -221,7 +221,8 @@ export class ChatApi {
         content: params.content,
         message_type: params.messageType || 'text',
         metadata: params.metadata,
-        skip_agent_trigger: params.skipAgentTrigger,
+        // Always send explicit boolean - undefined would be omitted by JSON.stringify
+        skip_agent_trigger: params.skipAgentTrigger === true,
       }),
     });
     const data = await this.handleResponse<{ message: RawMessage }>(response);
@@ -291,19 +292,26 @@ export class ChatApi {
 
   /**
    * Create a new voice/video room
+   * @param params.agentConfigId - Optional agent config ID for voice agent calls
    */
   async createRoom(params: {
     name: string;
+    roomId?: string;
+    agentConfigId?: string;
     emptyTimeout?: number;
     maxParticipants?: number;
+    metadata?: Record<string, unknown>;
   }): Promise<RoomInfo> {
     const response = await fetch(`${this.apiUrl}/v1/voice/rooms`, {
       method: 'POST',
       headers: await this.getHeaders(),
       body: JSON.stringify({
         name: params.name,
+        room_id: params.roomId,
+        agent_config_id: params.agentConfigId,
         empty_timeout: params.emptyTimeout,
         max_participants: params.maxParticipants,
+        metadata: params.metadata,
       }),
     });
     const data = await this.handleResponse<{ room: RawRoomInfo }>(response);
