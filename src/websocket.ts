@@ -1,81 +1,78 @@
 /**
- * VeroAI Chat WebSocket Manager
+ * @veroai/chat — WebSocket Client
  *
- * Handles WebSocket connection, reconnection, and message handling
+ * Connects to msgsrv WebSocket, handles subscribe/unsubscribe,
+ * unwraps the nested event format, and emits typed events.
+ * Auto-reconnects with exponential backoff.
  */
 
 import EventEmitter from 'eventemitter3';
 import type {
   ChatEvents,
-  WebSocketMessage,
-  NewMessageEvent,
-  TypingEvent,
-  PresenceEvent,
-  ReadReceiptEvent,
-  CallEvent,
-  CallAction,
-  CallType,
-  Message,
-  Conversation,
-  Participant,
-  StreamStartEvent,
-  StreamChunkEvent,
-  StreamEndEvent,
-  StreamErrorEvent,
+  ServerWsMessage,
+  ServerEventType,
+  MessageCreatedEvent,
+  TaskStreamDeltaEvent,
+  PresenceUpdatedEvent,
+  TaskStatusUpdatedEvent,
+  ConversationCreatedEvent,
+  ConversationDeletedEvent,
+  ReactionUpdatedEvent,
+  CallStartedEvent,
+  CallAnsweredEvent,
+  CallEndedEvent,
 } from './types';
 
-export interface WebSocketConfig {
+export interface ChatSocketConfig {
+  /** WebSocket URL (e.g., wss://ws.veroagents.com/ws) */
   url: string;
+  /** Token getter — called on each connect/reconnect */
   getToken: () => string | null | Promise<string | null>;
+  /** Auto-reconnect on disconnect (default: true) */
   autoReconnect?: boolean;
+  /** Base reconnect interval in ms (default: 2000) */
   reconnectInterval?: number;
+  /** Max reconnect attempts (default: 15) */
   maxReconnectAttempts?: number;
-  heartbeatInterval?: number;
 }
 
 type ConnectionState = 'disconnected' | 'connecting' | 'connected' | 'reconnecting';
 
-/**
- * WebSocket connection manager with auto-reconnect
- */
-export class WebSocketManager extends EventEmitter<ChatEvents> {
-  private config: Required<WebSocketConfig>;
+export class ChatSocket extends EventEmitter<ChatEvents> {
+  private config: Required<ChatSocketConfig>;
   private ws: WebSocket | null = null;
   private state: ConnectionState = 'disconnected';
   private reconnectAttempts = 0;
   private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-  private heartbeatTimer: ReturnType<typeof setInterval> | null = null;
   private pendingMessages: string[] = [];
 
-  constructor(config: WebSocketConfig) {
+  /** Conversation IDs currently subscribed to (restored on reconnect) */
+  private subscribedConversations = new Set<string>();
+  /** Session IDs currently subscribed to (restored on reconnect) */
+  private subscribedSessions = new Set<string>();
+
+  constructor(config: ChatSocketConfig) {
     super();
     this.config = {
       url: config.url,
       getToken: config.getToken,
       autoReconnect: config.autoReconnect ?? true,
-      reconnectInterval: config.reconnectInterval ?? 3000,
-      maxReconnectAttempts: config.maxReconnectAttempts ?? 10,
-      heartbeatInterval: config.heartbeatInterval ?? 30000,
+      reconnectInterval: config.reconnectInterval ?? 2000,
+      maxReconnectAttempts: config.maxReconnectAttempts ?? 15,
     };
   }
 
-  /**
-   * Get current connection state
-   */
+  /** Current connection state */
   getState(): ConnectionState {
     return this.state;
   }
 
-  /**
-   * Check if connected
-   */
+  /** Whether the socket is open and ready */
   isConnected(): boolean {
     return this.state === 'connected' && this.ws?.readyState === WebSocket.OPEN;
   }
 
-  /**
-   * Connect to the WebSocket server
-   */
+  /** Connect to the WebSocket server */
   async connect(): Promise<void> {
     if (this.state === 'connecting' || this.state === 'connected') {
       return;
@@ -89,9 +86,8 @@ export class WebSocketManager extends EventEmitter<ChatEvents> {
       throw new Error('No authentication token available');
     }
 
-    return new Promise((resolve, reject) => {
+    return new Promise<void>((resolve, reject) => {
       try {
-        // Build WebSocket URL with token
         const url = new URL(this.config.url);
         url.searchParams.set('token', token);
 
@@ -100,7 +96,7 @@ export class WebSocketManager extends EventEmitter<ChatEvents> {
         this.ws.onopen = () => {
           this.state = 'connected';
           this.reconnectAttempts = 0;
-          this.startHeartbeat();
+          this.resubscribe();
           this.flushPendingMessages();
           this.emit('connected');
           resolve();
@@ -110,16 +106,17 @@ export class WebSocketManager extends EventEmitter<ChatEvents> {
           this.handleClose(event.reason);
         };
 
-        this.ws.onerror = (event) => {
-          const error = new Error('WebSocket error');
+        this.ws.onerror = () => {
+          const error = new Error('WebSocket connection error');
           this.emit('error', error);
           if (this.state === 'connecting') {
+            this.state = 'disconnected';
             reject(error);
           }
         };
 
         this.ws.onmessage = (event) => {
-          this.handleMessage(event.data);
+          this.handleMessage(event.data as string);
         };
       } catch (error) {
         this.state = 'disconnected';
@@ -128,12 +125,10 @@ export class WebSocketManager extends EventEmitter<ChatEvents> {
     });
   }
 
-  /**
-   * Disconnect from the WebSocket server
-   */
+  /** Gracefully disconnect */
   disconnect(): void {
     this.config.autoReconnect = false;
-    this.clearTimers();
+    this.clearReconnectTimer();
 
     if (this.ws) {
       this.ws.close(1000, 'Client disconnect');
@@ -143,158 +138,67 @@ export class WebSocketManager extends EventEmitter<ChatEvents> {
     this.state = 'disconnected';
   }
 
-  /**
-   * Send a message through the WebSocket
-   */
-  send(type: string, payload: unknown): void {
-    const message = JSON.stringify({ type, payload, timestamp: new Date().toISOString() });
+  /** Subscribe to conversation events */
+  subscribe(conversationIds: string[]): void {
+    if (conversationIds.length === 0) return;
+    for (const id of conversationIds) {
+      this.subscribedConversations.add(id);
+    }
+    this.sendRaw(JSON.stringify({ action: 'subscribe', conversation_ids: conversationIds }));
+  }
 
+  /** Unsubscribe from conversation events */
+  unsubscribe(conversationIds: string[]): void {
+    if (conversationIds.length === 0) return;
+    for (const id of conversationIds) {
+      this.subscribedConversations.delete(id);
+    }
+    this.sendRaw(JSON.stringify({ action: 'unsubscribe', conversation_ids: conversationIds }));
+  }
+
+  /** Subscribe to a brain session for live events */
+  subscribeSession(sessionId: string): void {
+    this.subscribedSessions.add(sessionId);
+    this.sendRaw(JSON.stringify({ action: 'subscribe_session', session_id: sessionId }));
+  }
+
+  /** Unsubscribe from a brain session */
+  unsubscribeSession(sessionId: string): void {
+    this.subscribedSessions.delete(sessionId);
+    this.sendRaw(JSON.stringify({ action: 'unsubscribe_session', session_id: sessionId }));
+  }
+
+  // --------------------------------------------------------------------------
+  // Internal
+  // --------------------------------------------------------------------------
+
+  private sendRaw(data: string): void {
     if (this.isConnected()) {
-      this.ws!.send(message);
+      this.ws!.send(data);
     } else {
-      // Queue message for when connection is restored
-      this.pendingMessages.push(message);
+      this.pendingMessages.push(data);
     }
   }
 
-  /**
-   * Send typing indicator
-   */
-  sendTypingStart(conversationId: string): void {
-    this.send('typing:start', { conversationId });
-  }
-
-  /**
-   * Stop typing indicator
-   */
-  sendTypingStop(conversationId: string): void {
-    this.send('typing:stop', { conversationId });
-  }
-
-  /**
-   * Subscribe to conversations for real-time updates
-   */
-  subscribeToConversation(conversationId: string): void {
-    this.subscribeToConversations([conversationId]);
-  }
-
-  /**
-   * Subscribe to multiple conversations for real-time updates
-   */
-  subscribeToConversations(conversationIds: string[]): void {
-    // Server expects { type: "subscribe", conversationIds: [...] } at top level (not in payload)
-    const message = JSON.stringify({
-      type: 'subscribe',
-      conversationIds,
-      timestamp: new Date().toISOString(),
-    });
-
-    if (this.isConnected()) {
-      this.ws!.send(message);
-    } else {
-      this.pendingMessages.push(message);
+  private flushPendingMessages(): void {
+    while (this.pendingMessages.length > 0 && this.isConnected()) {
+      const msg = this.pendingMessages.shift();
+      if (msg) this.ws!.send(msg);
     }
   }
 
-  /**
-   * Unsubscribe from a conversation
-   */
-  unsubscribeFromConversation(conversationId: string): void {
-    this.unsubscribeFromConversations([conversationId]);
-  }
-
-  /**
-   * Unsubscribe from multiple conversations
-   */
-  unsubscribeFromConversations(conversationIds: string[]): void {
-    // Server expects { type: "unsubscribe", conversationIds: [...] } at top level (not in payload)
-    const message = JSON.stringify({
-      type: 'unsubscribe',
-      conversationIds,
-      timestamp: new Date().toISOString(),
-    });
-
-    if (this.isConnected()) {
-      this.ws!.send(message);
-    } else {
-      this.pendingMessages.push(message);
+  /** Re-subscribe to all tracked conversations/sessions after reconnect */
+  private resubscribe(): void {
+    if (this.subscribedConversations.size > 0) {
+      const ids = Array.from(this.subscribedConversations);
+      this.sendRaw(JSON.stringify({ action: 'subscribe', conversation_ids: ids }));
     }
-  }
-
-  /**
-   * Update presence status
-   */
-  updatePresence(status: string, statusMessage?: string): void {
-    this.send('presence:update', { status, statusMessage });
-  }
-
-  /**
-   * Send call notification (ring, accept, reject, end)
-   * Note: Actual WebRTC signaling is handled by LiveKit
-   */
-  sendCallNotification(
-    conversationId: string,
-    action: CallAction,
-    callType?: CallType,
-    roomName?: string
-  ): void {
-    this.send('call', { conversationId, action, callType, roomName });
-  }
-
-  // ============================================================================
-  // Streaming Methods
-  // ============================================================================
-
-  /**
-   * Request a streaming agent response
-   * Returns execution ID that can be used to track/cancel the stream
-   */
-  requestStream(
-    conversationId: string,
-    message: string,
-    agentConfigId?: string
-  ): string {
-    const executionId = crypto.randomUUID();
-
-    const streamRequest = {
-      type: 'agent:stream',
-      executionId,
-      conversationId,
-      message,
-      ...(agentConfigId && { agentConfigId }),
-    };
-
-    const rawMessage = JSON.stringify({
-      ...streamRequest,
-      timestamp: new Date().toISOString(),
-    });
-
-    if (this.isConnected()) {
-      this.ws!.send(rawMessage);
-    } else {
-      this.pendingMessages.push(rawMessage);
-    }
-
-    return executionId;
-  }
-
-  /**
-   * Cancel an active stream
-   */
-  cancelStream(executionId: string): void {
-    const cancelRequest = JSON.stringify({
-      type: 'agent:stream:cancel',
-      executionId,
-      timestamp: new Date().toISOString(),
-    });
-
-    if (this.isConnected()) {
-      this.ws!.send(cancelRequest);
+    for (const sid of this.subscribedSessions) {
+      this.sendRaw(JSON.stringify({ action: 'subscribe_session', session_id: sid }));
     }
   }
 
   private handleClose(reason?: string): void {
-    this.stopHeartbeat();
     const wasConnected = this.state === 'connected';
     this.state = 'disconnected';
     this.ws = null;
@@ -303,164 +207,113 @@ export class WebSocketManager extends EventEmitter<ChatEvents> {
       this.emit('disconnected', reason);
     }
 
-    // Attempt reconnection if enabled
     if (this.config.autoReconnect && this.reconnectAttempts < this.config.maxReconnectAttempts) {
       this.scheduleReconnect();
     }
   }
 
   private scheduleReconnect(): void {
-    if (this.reconnectTimer) {
-      return;
-    }
+    if (this.reconnectTimer) return;
 
     this.state = 'reconnecting';
     this.reconnectAttempts++;
 
+    // Exponential backoff: base * 1.5^(attempt-1), capped at 30s
     const delay = Math.min(
       this.config.reconnectInterval * Math.pow(1.5, this.reconnectAttempts - 1),
-      30000 // Max 30 seconds
+      30000,
     );
 
     this.reconnectTimer = setTimeout(async () => {
       this.reconnectTimer = null;
       try {
         await this.connect();
-      } catch (error) {
-        // Connect will handle scheduling next reconnect
+      } catch {
+        // connect() failure will trigger handleClose -> scheduleReconnect
       }
     }, delay);
   }
 
-  private handleMessage(data: string): void {
-    try {
-      const message = JSON.parse(data) as WebSocketMessage;
-
-      switch (message.type) {
-        case 'message:new':
-          this.emit('message:new', message.payload as NewMessageEvent);
-          break;
-
-        case 'message:updated':
-          this.emit('message:updated', message.payload as Message);
-          break;
-
-        case 'message:deleted': {
-          const { messageId, conversationId } = message.payload as {
-            messageId: string;
-            conversationId: string;
-          };
-          this.emit('message:deleted', messageId, conversationId);
-          break;
-        }
-
-        case 'conversation:created':
-          this.emit('conversation:created', message.payload as Conversation);
-          break;
-
-        case 'conversation:updated':
-          this.emit('conversation:updated', message.payload as Conversation);
-          break;
-
-        case 'participant:joined': {
-          const { conversationId, participant } = message.payload as {
-            conversationId: string;
-            participant: Participant;
-          };
-          this.emit('participant:joined', conversationId, participant);
-          break;
-        }
-
-        case 'participant:left': {
-          const payload = message.payload as { conversationId: string; userId: string };
-          this.emit('participant:left', payload.conversationId, payload.userId);
-          break;
-        }
-
-        case 'presence:updated':
-          this.emit('presence:updated', message.payload as PresenceEvent);
-          break;
-
-        case 'typing:start':
-          this.emit('typing:start', message.payload as TypingEvent);
-          break;
-
-        case 'typing:stop':
-          this.emit('typing:stop', message.payload as TypingEvent);
-          break;
-
-        case 'read:receipt':
-          this.emit('read:receipt', message.payload as ReadReceiptEvent);
-          break;
-
-        case 'call:ring':
-          this.emit('call:ring', message.payload as CallEvent);
-          break;
-
-        case 'call:accept':
-          this.emit('call:accept', message.payload as CallEvent);
-          break;
-
-        case 'call:reject':
-          this.emit('call:reject', message.payload as CallEvent);
-          break;
-
-        case 'call:end':
-          this.emit('call:end', message.payload as CallEvent);
-          break;
-
-        // Streaming events
-        case 'stream:start':
-          this.emit('stream:start', message.payload as StreamStartEvent);
-          break;
-
-        case 'stream:chunk':
-          this.emit('stream:chunk', message.payload as StreamChunkEvent);
-          break;
-
-        case 'stream:end':
-          this.emit('stream:end', message.payload as StreamEndEvent);
-          break;
-
-        case 'stream:error':
-          this.emit('stream:error', message.payload as StreamErrorEvent);
-          break;
-      }
-    } catch (error) {
-      console.error('[ChatWS] Failed to parse message:', error);
-    }
-  }
-
-  private flushPendingMessages(): void {
-    while (this.pendingMessages.length > 0 && this.isConnected()) {
-      const message = this.pendingMessages.shift();
-      if (message) {
-        this.ws!.send(message);
-      }
-    }
-  }
-
-  private startHeartbeat(): void {
-    this.stopHeartbeat();
-    this.heartbeatTimer = setInterval(() => {
-      if (this.isConnected()) {
-        this.send('ping', {});
-      }
-    }, this.config.heartbeatInterval);
-  }
-
-  private stopHeartbeat(): void {
-    if (this.heartbeatTimer) {
-      clearInterval(this.heartbeatTimer);
-      this.heartbeatTimer = null;
-    }
-  }
-
-  private clearTimers(): void {
-    this.stopHeartbeat();
+  private clearReconnectTimer(): void {
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
+    }
+  }
+
+  private handleMessage(data: string): void {
+    let msg: ServerWsMessage;
+    try {
+      msg = JSON.parse(data);
+    } catch {
+      return;
+    }
+
+    switch (msg.type) {
+      case 'event':
+        this.handleServerEvent(msg as any);
+        break;
+
+      case 'subscribed':
+        this.emit('subscribed', (msg as any).payload as string[]);
+        break;
+
+      case 'error':
+        this.emit('error', new Error(String((msg as any).payload)));
+        break;
+
+      case 'session_subscribed': {
+        const p = (msg as any).payload as { session_id: string };
+        this.emit('session_subscribed', p.session_id);
+        break;
+      }
+
+      case 'brain_event':
+        this.emit('brain_event', (msg as any).payload);
+        break;
+    }
+  }
+
+  /**
+   * Unwrap the nested event format:
+   * { type: "event", conversation_id, payload: { type: "<event_type>", payload: { ... } } }
+   */
+  private handleServerEvent(msg: { type: 'event'; conversation_id?: string; payload: { type: ServerEventType; payload: any } }): void {
+    const eventType = msg.payload.type;
+    const eventPayload = msg.payload.payload;
+    const convId = msg.conversation_id;
+
+    switch (eventType) {
+      case 'message.created':
+        this.emit('message.created', eventPayload as MessageCreatedEvent, convId);
+        break;
+      case 'task_stream_delta':
+        this.emit('task_stream_delta', eventPayload as TaskStreamDeltaEvent, convId);
+        break;
+      case 'presence.updated':
+        this.emit('presence.updated', eventPayload as PresenceUpdatedEvent, convId);
+        break;
+      case 'task.status_updated':
+        this.emit('task.status_updated', eventPayload as TaskStatusUpdatedEvent, convId);
+        break;
+      case 'conversation.created':
+        this.emit('conversation.created', eventPayload as ConversationCreatedEvent);
+        break;
+      case 'conversation.deleted':
+        this.emit('conversation.deleted', eventPayload as ConversationDeletedEvent);
+        break;
+      case 'reaction.updated':
+        this.emit('reaction.updated', eventPayload as ReactionUpdatedEvent, convId);
+        break;
+      case 'call.started':
+        this.emit('call.started', eventPayload as CallStartedEvent, convId);
+        break;
+      case 'call.answered':
+        this.emit('call.answered', eventPayload as CallAnsweredEvent, convId);
+        break;
+      case 'call.ended':
+        this.emit('call.ended', eventPayload as CallEndedEvent, convId);
+        break;
     }
   }
 }

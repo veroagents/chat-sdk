@@ -1,523 +1,362 @@
 /**
- * VeroAI Chat API Client
+ * @veroai/chat — HTTP API Client
  *
- * HTTP client for the VeroAI Chat API
+ * Wraps msgsrv REST endpoints (proxied through api.veroagents.com/v1/chat/*).
+ * All snake_case responses are transformed to camelCase before returning.
  */
 
-import type {
-  Conversation,
-  CreateConversationParams,
-  Message,
-  SendMessageParams,
-  GetMessagesParams,
-  PaginatedMessages,
-  User,
-  PresenceStatus,
-  AgentConfig,
-  GenerateTokenOptions,
-  GenerateTokenResult,
+import {
+  ChatApiError,
+  type Message,
+  type Conversation,
+  type Participant,
+  type User,
+  type Agent,
+  type SendMessageParams,
+  type GetMessagesParams,
+  type GetMessagesResponse,
+  type SyncConversation,
+  type SyncResponse,
+  type CreateConversationParams,
+  type CreateConversationResponse,
+  type UpdateConversationParams,
+  type ToggleReactionResponse,
+  type ForwardResponse,
+  type MessagingTokenResponse,
+  type DeleteMode,
+  type ReactionGroup,
+  type ContentType,
+  type SenderType,
+  type ThreadRole,
+  type ConversationType,
 } from '../types';
 
-export interface ApiClientConfig {
+export interface ChatApiConfig {
   apiUrl: string;
   getToken: () => string | null | Promise<string | null>;
-  /** API key for server-side token generation */
-  apiKey?: string;
 }
 
-/**
- * Chat API Client for HTTP requests
- */
 export class ChatApi {
-  private apiUrl: string;
+  private baseUrl: string;
   private getToken: () => string | null | Promise<string | null>;
-  private apiKey?: string;
 
-  constructor(config: ApiClientConfig) {
-    this.apiUrl = config.apiUrl.replace(/\/$/, '');
+  constructor(config: ChatApiConfig) {
+    this.baseUrl = config.apiUrl.replace(/\/$/, '');
     this.getToken = config.getToken;
-    this.apiKey = config.apiKey;
   }
 
-  // ============================================================================
-  // Token Generation (Server-side only)
-  // ============================================================================
-
-  /**
-   * Generate a chat token for a user (server-side only)
-   *
-   * This method is used by client backends to generate tokens for their users.
-   * Requires an API key to be configured.
-   *
-   * @example
-   * ```typescript
-   * // On your backend
-   * const chatApi = new ChatApi({
-   *   apiUrl: 'https://chat-api.veroai.dev',
-   *   apiKey: process.env.VERO_API_KEY,
-   *   getToken: () => null, // Not needed for token generation
-   * });
-   *
-   * const { token } = await chatApi.generateToken({
-   *   userId: user.id,
-   *   name: user.displayName,
-   *   avatar: user.avatarUrl,
-   * });
-   *
-   * // Return token to your frontend
-   * ```
-   */
-  async generateToken(options: GenerateTokenOptions): Promise<GenerateTokenResult> {
-    if (!this.apiKey) {
-      throw new Error('API key is required for token generation. Set apiKey in config.');
-    }
-
-    const response = await fetch(`${this.apiUrl}/v1/auth/token`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${this.apiKey}`,
-      },
-      body: JSON.stringify({
-        userId: options.userId,
-        name: options.name,
-        avatar: options.avatar,
-        metadata: options.metadata,
-        expiresIn: options.expiresIn,
-      }),
-    });
-
-    return this.handleResponse<GenerateTokenResult>(response);
-  }
-
-  private async getHeaders(): Promise<HeadersInit> {
-    const token = await this.getToken();
-    return {
-      'Content-Type': 'application/json',
-      ...(token && { Authorization: `Bearer ${token}` }),
-    };
-  }
-
-  private async handleResponse<T>(response: Response): Promise<T> {
-    if (!response.ok) {
-      const errorText = await response.text();
-      let errorMessage: string;
-      try {
-        const errorJson = JSON.parse(errorText);
-        errorMessage = errorJson.error?.message || errorJson.message || errorText;
-      } catch {
-        errorMessage = errorText;
-      }
-      throw new Error(errorMessage);
-    }
-    return response.json();
-  }
-
-  // ============================================================================
-  // Conversations
-  // ============================================================================
-
-  /**
-   * List all conversations for the current user
-   */
-  async listConversations(): Promise<Conversation[]> {
-    const response = await fetch(`${this.apiUrl}/v1/chat/conversations`, {
-      headers: await this.getHeaders(),
-    });
-    const data = await this.handleResponse<{ conversations: RawConversation[] }>(response);
-    return data.conversations.map(transformConversation);
-  }
-
-  /**
-   * Get a specific conversation
-   */
-  async getConversation(conversationId: string): Promise<Conversation> {
-    const response = await fetch(`${this.apiUrl}/v1/chat/conversations/${conversationId}`, {
-      headers: await this.getHeaders(),
-    });
-    const data = await this.handleResponse<{ conversation: RawConversation }>(response);
-    return transformConversation(data.conversation);
-  }
-
-  /**
-   * Create a new conversation
-   */
-  async createConversation(params: CreateConversationParams): Promise<Conversation> {
-    const response = await fetch(`${this.apiUrl}/v1/chat/conversations`, {
-      method: 'POST',
-      headers: await this.getHeaders(),
-      body: JSON.stringify({
-        type: params.type || 'direct',
-        name: params.name,
-        participant_ids: params.participantIds,
-        agent_config_id: params.agentConfigId,
-        metadata: params.metadata,
-      }),
-    });
-    const data = await this.handleResponse<{ conversation: RawConversation }>(response);
-    return transformConversation(data.conversation);
-  }
-
-  /**
-   * Mark conversation as read
-   */
-  async markConversationRead(conversationId: string): Promise<void> {
-    const response = await fetch(`${this.apiUrl}/v1/chat/conversations/${conversationId}/read`, {
-      method: 'POST',
-      headers: await this.getHeaders(),
-    });
-    await this.handleResponse<void>(response);
-  }
-
-  /**
-   * Leave a conversation
-   */
-  async leaveConversation(conversationId: string): Promise<void> {
-    const response = await fetch(
-      `${this.apiUrl}/v1/chat/conversations/${conversationId}/participants/me`,
-      {
-        method: 'DELETE',
-        headers: await this.getHeaders(),
-      }
-    );
-    await this.handleResponse<void>(response);
-  }
-
-  // ============================================================================
+  // --------------------------------------------------------------------------
   // Messages
-  // ============================================================================
+  // --------------------------------------------------------------------------
 
-  /**
-   * Get messages for a conversation
-   */
-  async getMessages(conversationId: string, params?: GetMessagesParams): Promise<PaginatedMessages> {
-    const searchParams = new URLSearchParams();
-    if (params?.limit) searchParams.set('limit', String(params.limit));
-    if (params?.offset) searchParams.set('offset', String(params.offset));
-    if (params?.before) searchParams.set('before', params.before);
-
-    const url = `${this.apiUrl}/v1/chat/conversations/${conversationId}/messages?${searchParams}`;
-    const response = await fetch(url, {
-      headers: await this.getHeaders(),
+  /** Send a message. POST /v1/chat/messages/send */
+  async send(params: SendMessageParams): Promise<Message> {
+    const raw = await this.post('/v1/chat/messages/send', {
+      conversation_id: params.conversationId,
+      content_text: params.contentText,
+      content_type: params.contentType,
+      content_meta: params.contentMeta,
+      reply_to_id: params.replyToId,
+      thread_role: params.threadRole,
+      task_id: params.taskId,
     });
-    const data = await this.handleResponse<RawPaginatedMessages>(response);
+    return transformMessage(raw);
+  }
+
+  /** Get messages for a conversation. GET /v1/chat/conversations/:id/messages */
+  async getMessages(conversationId: string, opts?: GetMessagesParams): Promise<GetMessagesResponse> {
+    const params = new URLSearchParams();
+    if (opts?.fromSeq != null) params.set('from_seq', String(opts.fromSeq));
+    if (opts?.toSeq != null) params.set('to_seq', String(opts.toSeq));
+    if (opts?.limit != null) params.set('limit', String(opts.limit));
+
+    const qs = params.toString();
+    const url = `/v1/chat/conversations/${conversationId}/messages${qs ? '?' + qs : ''}`;
+    const raw = await this.get(url);
     return {
-      messages: data.messages.map(transformMessage),
-      total: data.total,
-      hasMore: data.has_more,
-      limit: data.limit,
-      offset: data.offset,
+      messages: (raw.messages ?? []).map(transformMessage),
+      currentSeq: raw.current_seq ?? 0,
     };
   }
 
-  /**
-   * Send a message to a conversation
-   */
-  async sendMessage(conversationId: string, params: SendMessageParams): Promise<Message> {
-    const response = await fetch(`${this.apiUrl}/v1/chat/conversations/${conversationId}/messages`, {
-      method: 'POST',
-      headers: await this.getHeaders(),
-      body: JSON.stringify({
-        content: params.content,
-        message_type: params.messageType || 'text',
-        metadata: params.metadata,
-        // Always send explicit boolean - undefined would be omitted by JSON.stringify
-        skip_agent_trigger: params.skipAgentTrigger === true,
-      }),
+  /** Batch sync multiple conversations. POST /v1/chat/messages/sync */
+  async sync(conversations: SyncConversation[]): Promise<SyncResponse> {
+    const raw = await this.post('/v1/chat/messages/sync', {
+      conversations: conversations.map((c) => ({
+        conversation_id: c.conversationId,
+        last_seq: c.lastSeq,
+      })),
     });
-    const data = await this.handleResponse<{ message: RawMessage }>(response);
-    return transformMessage(data.message);
+    return {
+      batches: (raw.batches ?? []).map((b: any) => ({
+        conversationId: b.conversation_id,
+        messages: (b.messages ?? []).map(transformMessage),
+        currentSeq: b.current_seq ?? 0,
+      })),
+    };
   }
 
-  // ============================================================================
-  // Agents
-  // ============================================================================
-
-  /**
-   * Add agent to conversation
-   */
-  async addAgentToConversation(
-    conversationId: string,
-    agentConfigId: string,
-    addAsParticipant = true
-  ): Promise<void> {
-    const response = await fetch(`${this.apiUrl}/v1/chat/conversations/${conversationId}/agent`, {
-      method: 'POST',
-      headers: await this.getHeaders(),
-      body: JSON.stringify({
-        agent_config_id: agentConfigId,
-        add_as_participant: addAsParticipant,
-      }),
+  /** Toggle reaction on a message. POST /v1/chat/messages/:id/reactions */
+  async toggleReaction(messageId: string, conversationId: string, emoji: string): Promise<ToggleReactionResponse> {
+    const raw = await this.post(`/v1/chat/messages/${messageId}/reactions`, {
+      conversation_id: conversationId,
+      emoji,
     });
-    await this.handleResponse<void>(response);
+    return { action: raw.action };
   }
 
-  /**
-   * Remove agent from conversation
-   */
-  async removeAgentFromConversation(conversationId: string): Promise<void> {
-    const response = await fetch(`${this.apiUrl}/v1/chat/conversations/${conversationId}/agent`, {
-      method: 'DELETE',
-      headers: await this.getHeaders(),
+  /** Forward a message to other conversations. POST /v1/chat/messages/forward */
+  async forward(messageId: string, conversationIds: string[]): Promise<ForwardResponse> {
+    const raw = await this.post('/v1/chat/messages/forward', {
+      message_id: messageId,
+      conversation_ids: conversationIds,
     });
-    await this.handleResponse<void>(response);
+    return {
+      forwarded: (raw.forwarded ?? []).map(transformMessage),
+    };
   }
 
-  /**
-   * Toggle agent enabled/disabled
-   */
-  async toggleAgent(conversationId: string, enabled: boolean): Promise<void> {
-    const response = await fetch(`${this.apiUrl}/v1/chat/conversations/${conversationId}/agent`, {
-      method: 'PATCH',
-      headers: await this.getHeaders(),
-      body: JSON.stringify({ enabled }),
-    });
-    await this.handleResponse<void>(response);
+  // --------------------------------------------------------------------------
+  // Conversations
+  // --------------------------------------------------------------------------
+
+  /** List all conversations. GET /v1/chat/conversations */
+  async listConversations(): Promise<Conversation[]> {
+    const raw = await this.get('/v1/chat/conversations');
+    return (raw.conversations ?? []).map(transformConversation);
   }
 
-  /**
-   * List available agents
-   */
-  async listAgents(): Promise<AgentConfig[]> {
-    const response = await fetch(`${this.apiUrl}/v1/chat/agents`, {
-      headers: await this.getHeaders(),
+  /** Create a conversation. POST /v1/chat/conversations */
+  async createConversation(params: CreateConversationParams): Promise<CreateConversationResponse> {
+    const raw = await this.post('/v1/chat/conversations', {
+      type: params.type,
+      name: params.name,
+      participant_ids: params.participantIds,
     });
-    const data = await this.handleResponse<{ agents: AgentConfig[]; total: number }>(response);
-    return data.agents;
+    return {
+      id: raw.id,
+      type: raw.type as ConversationType,
+      name: raw.name,
+      createdBy: raw.created_by,
+    };
   }
 
-  // ============================================================================
-  // Voice Rooms
-  // ============================================================================
-
-  /**
-   * Create a new voice/video room
-   * @param params.agentConfigId - Optional agent config ID for voice agent calls
-   */
-  async createRoom(params: {
-    name: string;
-    roomId?: string;
-    agentConfigId?: string;
-    emptyTimeout?: number;
-    maxParticipants?: number;
-    metadata?: Record<string, unknown>;
-  }): Promise<RoomInfo> {
-    const response = await fetch(`${this.apiUrl}/v1/voice/rooms`, {
-      method: 'POST',
-      headers: await this.getHeaders(),
-      body: JSON.stringify({
-        name: params.name,
-        room_id: params.roomId,
-        agent_config_id: params.agentConfigId,
-        empty_timeout: params.emptyTimeout,
-        max_participants: params.maxParticipants,
-        metadata: params.metadata,
-      }),
+  /** Update a conversation. PATCH /v1/chat/conversations/:id */
+  async updateConversation(conversationId: string, params: UpdateConversationParams): Promise<void> {
+    await this.patch(`/v1/chat/conversations/${conversationId}`, {
+      name: params.name,
+      description: params.description,
     });
-    const data = await this.handleResponse<{ room: RawRoomInfo }>(response);
-    return transformRoomInfo(data.room);
   }
 
-  /**
-   * Join an existing room and get access token
-   */
-  async joinRoom(params: {
-    roomName: string;
-    participantName: string;
-    canPublish?: boolean;
-    canSubscribe?: boolean;
-  }): Promise<RoomInfo> {
-    const response = await fetch(
-      `${this.apiUrl}/v1/voice/rooms/${encodeURIComponent(params.roomName)}/join`,
-      {
-        method: 'POST',
-        headers: await this.getHeaders(),
-        body: JSON.stringify({
-          participant_name: params.participantName,
-          can_publish: params.canPublish ?? true,
-          can_subscribe: params.canSubscribe ?? true,
-        }),
+  /** Mark conversation as read up to a sequence number. POST /v1/chat/conversations/:id/read */
+  async markRead(conversationId: string, upToSeq: number): Promise<void> {
+    await this.post(`/v1/chat/conversations/${conversationId}/read`, {
+      up_to_seq: upToSeq,
+    });
+  }
+
+  /** Delete a conversation. DELETE /v1/chat/conversations/:id */
+  async deleteConversation(conversationId: string, mode: DeleteMode): Promise<void> {
+    await this.delete(`/v1/chat/conversations/${conversationId}`, { mode });
+  }
+
+  /** Add participants to a conversation. POST /v1/chat/conversations/:id/participants */
+  async addParticipants(conversationId: string, userIds: string[]): Promise<void> {
+    await this.post(`/v1/chat/conversations/${conversationId}/participants`, {
+      user_ids: userIds,
+    });
+  }
+
+  /** Remove a participant. DELETE /v1/chat/conversations/:id/participants/:userId */
+  async removeParticipant(conversationId: string, userId: string): Promise<void> {
+    await this.delete(`/v1/chat/conversations/${conversationId}/participants/${userId}`);
+  }
+
+  /** Get participants. GET /v1/chat/conversations/:id/participants */
+  async getParticipants(conversationId: string): Promise<Participant[]> {
+    const raw = await this.get(`/v1/chat/conversations/${conversationId}/participants`);
+    return (raw.participants ?? []).map(transformParticipant);
+  }
+
+  // --------------------------------------------------------------------------
+  // Users & Agents
+  // --------------------------------------------------------------------------
+
+  /** List users. GET /v1/chat/users */
+  async listUsers(): Promise<User[]> {
+    const raw = await this.get('/v1/chat/users');
+    return (raw.users ?? []).map(transformUser);
+  }
+
+  /** List agents. GET /v1/chat/agents */
+  async listAgents(): Promise<Agent[]> {
+    const raw = await this.get('/v1/chat/agents');
+    return (raw.agents ?? []).map(transformUser);
+  }
+
+  // --------------------------------------------------------------------------
+  // Messaging Token
+  // --------------------------------------------------------------------------
+
+  /** Get a WebSocket auth token. GET /v1/messaging/token */
+  async getMessagingToken(): Promise<MessagingTokenResponse> {
+    const raw = await this.get('/v1/messaging/token');
+    return {
+      token: raw.token,
+      wsUrl: raw.ws_url,
+      expiresAt: raw.expires_at,
+    };
+  }
+
+  // --------------------------------------------------------------------------
+  // HTTP helpers
+  // --------------------------------------------------------------------------
+
+  private async headers(): Promise<Record<string, string>> {
+    const token = await this.getToken();
+    const h: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (token) h['Authorization'] = `Bearer ${token}`;
+    return h;
+  }
+
+  private async request(method: string, path: string, body?: unknown): Promise<any> {
+    const url = `${this.baseUrl}${path}`;
+    const init: RequestInit = {
+      method,
+      headers: await this.headers(),
+    };
+    if (body !== undefined) {
+      init.body = JSON.stringify(body);
+    }
+
+    const res = await fetch(url, init);
+
+    if (!res.ok) {
+      let errorBody: unknown;
+      try {
+        errorBody = await res.json();
+      } catch {
+        errorBody = await res.text().catch(() => undefined);
       }
-    );
-    const data = await this.handleResponse<RawJoinRoomResponse>(response);
-    return {
-      name: data.room_name,
-      wsUrl: data.ws_url,
-      token: data.token,
-    };
+      const msg =
+        (errorBody && typeof errorBody === 'object' && 'error' in errorBody
+          ? (errorBody as any).error
+          : undefined) ?? `HTTP ${res.status}`;
+      throw new ChatApiError(typeof msg === 'string' ? msg : JSON.stringify(msg), res.status, errorBody);
+    }
+
+    // Some endpoints return empty 200 (mark read, delete, etc.)
+    const text = await res.text();
+    if (!text) return {};
+    return JSON.parse(text);
   }
 
-  /**
-   * Get room token for an existing room
-   * Convenience method for getting a token without creating
-   */
-  async getRoomToken(roomName: string, participantName: string): Promise<RoomInfo> {
-    return this.joinRoom({ roomName, participantName });
+  private get(path: string) {
+    return this.request('GET', path);
+  }
+
+  private post(path: string, body?: unknown) {
+    return this.request('POST', path, body);
+  }
+
+  private patch(path: string, body?: unknown) {
+    return this.request('PATCH', path, body);
+  }
+
+  private delete(path: string, body?: unknown) {
+    return this.request('DELETE', path, body);
   }
 }
 
 // ============================================================================
-// Raw API Types (snake_case from server)
+// Transform helpers (snake_case server responses -> camelCase SDK types)
 // ============================================================================
 
-interface RawUser {
-  id: string;
-  email?: string;
-  first_name?: string;
-  last_name?: string;
-  avatar?: string;
-  is_virtual?: boolean;
-  agent_config_id?: string;
-  status?: PresenceStatus;
-  status_message?: string;
-  last_seen?: string;
-  created_at?: string;
-}
-
-interface RawParticipant {
-  user_id: string;
-  role: 'admin' | 'member';
-  is_active: boolean;
-  joined_at?: string;
-  last_seen?: string;
-  user?: RawUser;
-}
-
-interface RawConversation {
-  id: string;
-  name?: string;
-  type: string;
-  is_active: boolean;
-  last_message_at?: string;
-  agent_enabled?: boolean;
-  agent_config_id?: string;
-  participants?: RawParticipant[];
-  unread_count?: number;
-  metadata?: Record<string, unknown>;
-  created_at?: string;
-  updated_at?: string;
-}
-
-interface RawReadReceipt {
-  user_id: string;
-  read_at?: string;
-}
-
-interface RawMessage {
-  id: string;
-  conversation_id: string;
-  content: string;
-  message_type: string;
-  sender_id?: string;
-  sender_name?: string;
-  sender_avatar?: string;
-  sender?: RawUser;
-  read_by?: RawReadReceipt[];
-  metadata?: Record<string, unknown>;
-  created_at?: string;
-  edited_at?: string;
-}
-
-interface RawPaginatedMessages {
-  messages: RawMessage[];
-  total: number;
-  has_more: boolean;
-  limit: number;
-  offset: number;
-}
-
-interface RawRoomInfo {
-  id?: string;
-  name: string;
-  ws_url: string;
-  token: string;
-}
-
-interface RawJoinRoomResponse {
-  room_name: string;
-  ws_url: string;
-  token: string;
-}
-
-// Exported room types
-export interface RoomInfo {
-  name: string;
-  wsUrl: string;
-  token: string;
-}
-
-// ============================================================================
-// Transform Functions (snake_case to camelCase)
-// ============================================================================
-
-function transformUser(raw: RawUser): User {
-  return {
-    id: raw.id,
-    email: raw.email,
-    firstName: raw.first_name,
-    lastName: raw.last_name,
-    avatar: raw.avatar,
-    isVirtual: raw.is_virtual,
-    agentConfigId: raw.agent_config_id,
-    status: raw.status,
-    statusMessage: raw.status_message,
-    lastSeen: raw.last_seen,
-    createdAt: raw.created_at,
-  };
-}
-
-function transformParticipant(raw: RawParticipant) {
-  return {
-    userId: raw.user_id,
-    role: raw.role,
-    isActive: raw.is_active,
-    joinedAt: raw.joined_at,
-    lastSeen: raw.last_seen,
-    user: raw.user ? transformUser(raw.user) : undefined,
-  };
-}
-
-function transformConversation(raw: RawConversation): Conversation {
-  return {
-    id: raw.id,
-    name: raw.name,
-    type: raw.type as Conversation['type'],
-    isActive: raw.is_active,
-    lastMessageAt: raw.last_message_at,
-    agentEnabled: raw.agent_enabled,
-    agentConfigId: raw.agent_config_id,
-    participants: raw.participants?.map(transformParticipant),
-    unreadCount: raw.unread_count,
-    metadata: raw.metadata,
-    createdAt: raw.created_at,
-    updatedAt: raw.updated_at,
-  };
-}
-
-function transformMessage(raw: RawMessage): Message {
+function transformMessage(raw: any): Message {
   return {
     id: raw.id,
     conversationId: raw.conversation_id,
-    content: raw.content,
-    messageType: raw.message_type as Message['messageType'],
+    seqNum: raw.seq_num ?? 0,
     senderId: raw.sender_id,
-    senderName: raw.sender_name,
-    senderAvatar: raw.sender_avatar,
-    sender: raw.sender ? transformUser(raw.sender) : undefined,
-    readBy: raw.read_by?.map((r) => ({
-      userId: r.user_id,
-      readAt: r.read_at,
-    })),
-    metadata: raw.metadata,
-    createdAt: raw.created_at,
-    editedAt: raw.edited_at,
+    senderType: raw.sender_type as SenderType,
+    contentType: raw.content_type as ContentType,
+    contentText: raw.content_text,
+    contentMeta: raw.content_meta,
+    replyToId: raw.reply_to_id,
+    threadId: raw.thread_id,
+    threadRole: (raw.thread_role ?? 'main') as ThreadRole,
+    taskId: raw.task_id,
+    createdAt: raw.created_at ?? '',
+    isInternal: raw.is_internal,
+    isForwarded: raw.is_forwarded,
+    reactions: raw.reactions?.map(transformReactionGroup),
   };
 }
 
-function transformRoomInfo(raw: RawRoomInfo): RoomInfo {
+function transformReactionGroup(raw: any): ReactionGroup {
   return {
+    emoji: raw.emoji,
+    count: raw.count,
+    userIds: raw.user_ids ?? [],
+  };
+}
+
+function transformConversation(raw: any): Conversation {
+  const conv: Conversation = {
+    id: raw.id,
+    type: raw.type as ConversationType,
     name: raw.name,
-    wsUrl: raw.ws_url,
-    token: raw.token,
+    description: raw.description,
+    createdBy: raw.created_by ?? '',
+    lastActivity: raw.last_activity,
+    seqCounter: raw.seq_counter ?? 0,
+    createdAt: raw.created_at ?? '',
+    lastMessagePreview: raw.last_message_preview,
+    unreadCount: raw.unread_count ?? 0,
+  };
+
+  if (raw.contact) {
+    conv.contact = {
+      userId: raw.contact.user_id,
+      displayName: raw.contact.display_name,
+      isAgent: raw.contact.is_agent ?? false,
+      status: raw.contact.status ?? '',
+      avatarUrl: raw.contact.avatar_url,
+      bio: raw.contact.bio,
+      lastSeen: raw.contact.last_seen,
+      jobRole: raw.contact.job_role,
+      isDefaultAgent: raw.contact.is_default_agent,
+      language: raw.contact.language,
+    };
+  }
+
+  return conv;
+}
+
+function transformParticipant(raw: any): Participant {
+  return {
+    userId: raw.user_id,
+    displayName: raw.display_name,
+    isAgent: raw.is_agent ?? false,
+    role: raw.role,
+    avatarUrl: raw.avatar_url,
+    status: raw.status,
+    jobTitle: raw.job_title,
+  };
+}
+
+function transformUser(raw: any): User {
+  return {
+    id: raw.id,
+    displayName: raw.display_name,
+    isAgent: raw.is_agent ?? false,
+    status: raw.status ?? '',
+    bio: raw.bio,
+    avatarUrl: raw.avatar_url,
+    lastSeen: raw.last_seen,
+    jobTitle: raw.job_title,
+    language: raw.language,
+    isDefaultAgent: raw.is_default_agent,
   };
 }

@@ -8,12 +8,14 @@
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
-      "import": "./dist/index.js",
-      "types": "./dist/index.d.ts"
-    },
-    "./react": {
-      "import": "./dist/react/index.js",
-      "types": "./dist/react/index.d.ts"
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
     }
   },
   "files": [
@@ -29,17 +31,7 @@
   "dependencies": {
     "eventemitter3": "^5.0.1"
   },
-  "peerDependencies": {
-    "react": ">=17.0.0"
-  },
-  "peerDependenciesMeta": {
-    "react": {
-      "optional": true
-    }
-  },
   "devDependencies": {
-    "@types/react": "^18.3.0",
-    "react": "^18.3.1",
     "tsup": "^8.0.0",
     "typescript": "^5.8.0"
   },

@@ -1,439 +1,386 @@
 /**
- * VeroAI Chat SDK Types
+ * @veroai/chat SDK Types
+ *
+ * Types aligned with msgsrv's actual API protocol.
  */
 
 // ============================================================================
 // Configuration
 // ============================================================================
 
-export interface ChatClientConfig {
-  /** VeroAI API URL (e.g., https://api.veroai.dev) */
-  apiUrl: string;
-  /** WebSocket URL for real-time events (e.g., wss://ws.veroai.dev) */
+export interface ChatConfig {
+  /** VeroAI API base URL. Default: https://api.veroagents.com */
+  apiUrl?: string;
+  /** WebSocket URL for real-time events. Default: wss://ws.veroagents.com/ws */
   wsUrl?: string;
-  /** Authentication token (JWT) - used for both API and WebSocket if separate tokens not provided */
+  /** Static JWT token for authentication */
   token?: string;
-  /** Token getter function for dynamic token retrieval - used for both API and WebSocket if separate getters not provided */
+  /** Async token getter (takes precedence over static token) */
   getToken?: () => string | null | Promise<string | null>;
-  /**
-   * Token getter specifically for API calls
-   * Use this when your API server and WebSocket server use different auth tokens
-   * (e.g., API uses accessToken from your auth server, WebSocket uses chatToken from VeroAI)
-   */
-  getApiToken?: () => string | null | Promise<string | null>;
-  /**
-   * Token getter specifically for WebSocket connections
-   * Use this when your API server and WebSocket server use different auth tokens
-   * Falls back to getToken if not provided
-   */
-  getWsToken?: () => string | null | Promise<string | null>;
-  /** API key for server-side token generation (use with generateToken) */
-  apiKey?: string;
-  /** Auto-connect to WebSocket on initialization */
+  /** Auto-connect WebSocket on client creation */
   autoConnect?: boolean;
-  /** Auto-reconnect on disconnect */
+  /** Auto-reconnect on disconnect (default: true) */
   autoReconnect?: boolean;
-  /** Reconnect interval in ms */
+  /** Base reconnect interval in ms (default: 2000) */
   reconnectInterval?: number;
-  /** Max reconnect attempts */
+  /** Max reconnect attempts (default: 15) */
   maxReconnectAttempts?: number;
 }
 
 // ============================================================================
-// Token Generation (Server-side)
+// Domain Types (camelCase — what the SDK exposes)
 // ============================================================================
 
-/**
- * Options for generating a chat token
- * Used by client backends to generate tokens for their users
- */
-export interface GenerateTokenOptions {
-  /** User ID from client's system */
-  userId: string;
-  /** Display name for the user */
-  name: string;
-  /** Avatar URL */
-  avatar?: string;
-  /** Custom metadata to include in token */
-  metadata?: Record<string, unknown>;
-  /** Token expiration in seconds (default: 3600, max: 30 days) */
-  expiresIn?: number;
+export type ConversationType = 'direct' | 'group' | 'agent_direct' | 'agent_group';
+export type ContentType = 'text' | 'image' | 'audio' | 'video' | 'file' | 'task' | 'result' | 'system';
+export type SenderType = 'human' | 'agent';
+export type ThreadRole = 'main' | 'aside';
+export type ParticipantRole = 'owner' | 'admin' | 'member' | 'agent';
+export type DeleteMode = 'for_me' | 'for_everyone';
+
+export interface ReactionGroup {
+  emoji: string;
+  count: number;
+  userIds: string[];
 }
 
-/**
- * Result of token generation
- */
-export interface GenerateTokenResult {
-  /** JWT token for chat operations */
-  token: string;
-  /** Unix timestamp when token expires */
-  expiresAt: number;
-}
-
-/**
- * User context extracted from chat token
- */
-export interface ChatUser {
-  /** User ID from client's system */
+export interface Message {
   id: string;
-  /** Display name */
-  name: string;
-  /** Avatar URL */
-  avatar?: string;
-  /** Custom metadata */
-  metadata?: Record<string, unknown>;
+  conversationId: string;
+  seqNum: number;
+  senderId: string;
+  senderType: SenderType;
+  contentType: ContentType;
+  contentText: string;
+  contentMeta?: string;
+  replyToId?: string;
+  threadId?: string;
+  threadRole: ThreadRole;
+  taskId?: string;
+  createdAt: string;
+  isInternal?: boolean;
+  isForwarded?: boolean;
+  reactions?: ReactionGroup[];
 }
 
-// ============================================================================
-// User Types
-// ============================================================================
-
-export interface User {
-  id: string;
-  email?: string;
-  firstName?: string;
-  lastName?: string;
-  avatar?: string;
-  isVirtual?: boolean;
-  agentConfigId?: string;
-  status?: PresenceStatus;
-  statusMessage?: string;
-  lastSeen?: string;
-  createdAt?: string;
-}
-
-export type PresenceStatus = 'online' | 'away' | 'busy' | 'offline';
-
-export interface UserPresence {
+export interface ConversationContact {
   userId: string;
-  status: PresenceStatus;
-  statusMessage?: string;
+  displayName: string;
+  isAgent: boolean;
+  status: string;
+  avatarUrl?: string;
+  bio?: string;
   lastSeen?: string;
-  metadata?: Record<string, unknown>;
+  jobRole?: string;
+  isDefaultAgent?: boolean;
+  language?: string;
 }
-
-// ============================================================================
-// Conversation Types
-// ============================================================================
-
-export type ConversationType = 'direct' | 'group' | 'channel' | 'support';
 
 export interface Conversation {
   id: string;
-  name?: string;
   type: ConversationType;
-  isActive: boolean;
-  lastMessageAt?: string;
-  agentEnabled?: boolean;
-  agentConfigId?: string;
-  participants?: Participant[];
-  unreadCount?: number;
-  metadata?: Record<string, unknown>;
-  createdAt?: string;
-  updatedAt?: string;
+  name?: string;
+  description?: string;
+  createdBy: string;
+  lastActivity?: string;
+  seqCounter: number;
+  createdAt: string;
+  lastMessagePreview?: string;
+  unreadCount: number;
+  contact?: ConversationContact;
 }
 
 export interface Participant {
   userId: string;
-  role: 'admin' | 'member';
-  isActive: boolean;
-  joinedAt?: string;
+  displayName: string;
+  isAgent: boolean;
+  role: ParticipantRole;
+  avatarUrl?: string;
+  status?: string;
+  jobTitle?: string;
+}
+
+export interface User {
+  id: string;
+  displayName: string;
+  isAgent: boolean;
+  status: string;
+  bio?: string;
+  avatarUrl?: string;
   lastSeen?: string;
-  user?: User;
+  jobTitle?: string;
+  language?: string;
+  isDefaultAgent?: boolean;
+}
+
+export type Agent = User;
+
+// ============================================================================
+// Request Params
+// ============================================================================
+
+export interface SendMessageParams {
+  conversationId: string;
+  contentText: string;
+  contentType?: ContentType;
+  contentMeta?: string;
+  replyToId?: string;
+  threadRole?: ThreadRole;
+  taskId?: string;
+}
+
+export interface GetMessagesParams {
+  fromSeq?: number;
+  toSeq?: number;
+  limit?: number;
+}
+
+export interface GetMessagesResponse {
+  messages: Message[];
+  currentSeq: number;
+}
+
+export interface SyncConversation {
+  conversationId: string;
+  lastSeq: number;
+}
+
+export interface SyncBatch {
+  conversationId: string;
+  messages: Message[];
+  currentSeq: number;
+}
+
+export interface SyncResponse {
+  batches: SyncBatch[];
 }
 
 export interface CreateConversationParams {
   type?: ConversationType;
   name?: string;
-  participantIds: string[];
-  agentConfigId?: string;
-  metadata?: Record<string, unknown>;
+  participantIds?: string[];
 }
 
-// ============================================================================
-// Message Types
-// ============================================================================
-
-export type MessageType = 'text' | 'system' | 'agent' | 'file' | 'call';
-
-export interface Message {
+export interface CreateConversationResponse {
   id: string;
-  conversationId: string;
-  content: string;
-  messageType: MessageType;
-  senderId?: string;
-  /** Denormalized sender display name (from token at write time) */
-  senderName?: string;
-  /** Denormalized sender avatar URL (from token at write time) */
-  senderAvatar?: string;
-  /** @deprecated Use senderName/senderAvatar instead. Full sender object (requires lookup) */
-  sender?: User;
-  readBy?: ReadReceipt[];
-  metadata?: Record<string, unknown>;
-  createdAt?: string;
-  editedAt?: string;
+  type: ConversationType;
+  name?: string;
+  createdBy: string;
 }
 
-export interface ReadReceipt {
-  userId: string;
-  readAt?: string;
-}
-
-export interface SendMessageParams {
-  content: string;
-  messageType?: MessageType;
-  metadata?: Record<string, unknown>;
-  /** Skip automatic agent triggering (used when client handles streaming directly) */
-  skipAgentTrigger?: boolean;
-}
-
-export interface GetMessagesParams {
-  limit?: number;
-  offset?: number;
-  before?: string;
-}
-
-export interface PaginatedMessages {
-  messages: Message[];
-  total: number;
-  hasMore: boolean;
-  limit: number;
-  offset: number;
-}
-
-// ============================================================================
-// Agent Types
-// ============================================================================
-
-export interface AgentConfig {
-  id: string;
-  name: string;
+export interface UpdateConversationParams {
+  name?: string;
   description?: string;
-  avatarUrl?: string;
-  model?: string;
+}
+
+export interface ToggleReactionResponse {
+  action: 'added' | 'removed';
+}
+
+export interface ForwardResponse {
+  forwarded: Message[];
+}
+
+export interface MessagingTokenResponse {
+  token: string;
+  wsUrl: string;
+  expiresAt: string;
 }
 
 // ============================================================================
-// WebSocket Event Types
+// WebSocket Protocol Types
 // ============================================================================
 
-export type WebSocketEventType =
-  | 'connected'
-  | 'disconnected'
-  | 'error'
-  | 'message'
-  | 'message:new'
-  | 'message:updated'
-  | 'message:deleted'
-  | 'conversation:created'
-  | 'conversation:updated'
-  | 'participant:joined'
-  | 'participant:left'
-  | 'presence:updated'
-  | 'typing:start'
-  | 'typing:stop'
-  | 'read:receipt'
-  | 'call:ring'
-  | 'call:accept'
-  | 'call:reject'
-  | 'call:end'
-  | 'stream:start'
-  | 'stream:chunk'
-  | 'stream:end'
-  | 'stream:error';
+/** Client-to-server actions */
+export type ClientAction = 'subscribe' | 'unsubscribe' | 'subscribe_session' | 'unsubscribe_session';
 
-export interface WebSocketMessage<T = unknown> {
-  type: WebSocketEventType;
-  payload: T;
-  timestamp: string;
+export interface ClientSubscribeMessage {
+  action: 'subscribe';
+  conversation_ids: string[];
 }
 
-export interface NewMessageEvent {
-  message: Message;
-  conversationId: string;
+export interface ClientUnsubscribeMessage {
+  action: 'unsubscribe';
+  conversation_ids: string[];
 }
 
-export interface TypingEvent {
-  conversationId: string;
-  userId: string;
-  userName?: string;
+export interface ClientSubscribeSessionMessage {
+  action: 'subscribe_session';
+  session_id: string;
 }
 
-export interface PresenceEvent {
-  userId: string;
-  status: PresenceStatus;
-  statusMessage?: string;
+export interface ClientUnsubscribeSessionMessage {
+  action: 'unsubscribe_session';
+  session_id: string;
 }
 
-export interface ReadReceiptEvent {
-  conversationId: string;
-  messageId: string;
-  userId: string;
-  readAt: string;
+export type ClientWsMessage =
+  | ClientSubscribeMessage
+  | ClientUnsubscribeMessage
+  | ClientSubscribeSessionMessage
+  | ClientUnsubscribeSessionMessage;
+
+/** Server-to-client wrapper */
+export interface ServerEventMessage {
+  type: 'event';
+  conversation_id?: string;
+  payload: {
+    type: ServerEventType;
+    payload: unknown;
+  };
+}
+
+export interface ServerSubscribedMessage {
+  type: 'subscribed';
+  payload: string[];
+}
+
+export interface ServerErrorMessage {
+  type: 'error';
+  payload: string;
+}
+
+export interface ServerSessionSubscribedMessage {
+  type: 'session_subscribed';
+  payload: { session_id: string };
+}
+
+export interface ServerBrainEventMessage {
+  type: 'brain_event';
+  payload: unknown;
+}
+
+export type ServerWsMessage =
+  | ServerEventMessage
+  | ServerSubscribedMessage
+  | ServerErrorMessage
+  | ServerSessionSubscribedMessage
+  | ServerBrainEventMessage;
+
+// ============================================================================
+// Server Event Types (inside the nested payload)
+// ============================================================================
+
+export type ServerEventType =
+  | 'message.created'
+  | 'task_stream_delta'
+  | 'presence.updated'
+  | 'task.status_updated'
+  | 'conversation.created'
+  | 'conversation.deleted'
+  | 'reaction.updated'
+  | 'call.started'
+  | 'call.answered'
+  | 'call.ended';
+
+export interface MessageCreatedEvent {
+  message_id: string;
+  seq_num: number;
+  is_internal?: boolean;
+}
+
+export interface TaskStreamDeltaEvent {
+  delta: string;
+  agent_id: string;
+  session_id: string;
+}
+
+export interface PresenceUpdatedEvent {
+  agent_id?: string;
+  user_id?: string;
+  status: string;
+  status_detail?: string;
+}
+
+export interface TaskStatusUpdatedEvent {
+  task_id: string;
+  status: string;
+  current_step?: string;
+  progress_narrative?: string;
+  agent_id?: string;
+}
+
+export interface ConversationCreatedEvent {
+  conversation_id: string;
+  contact_name?: string;
+  contact_id?: string;
+  group_name?: string;
+}
+
+export interface ConversationDeletedEvent {
+  conversation_id: string;
+}
+
+export interface ReactionUpdatedEvent {
+  message_id: string;
+  emoji: string;
+  action: 'added' | 'removed';
+  user_id: string;
+}
+
+export interface CallStartedEvent {
+  call_id: string;
+  room_name: string;
+  call_type: string;
+  conversation_id: string;
+  initiator_id: string;
+}
+
+export interface CallAnsweredEvent {
+  call_id: string;
+  conversation_id: string;
+  answered_by: string;
+}
+
+export interface CallEndedEvent {
+  call_id: string;
+  conversation_id: string;
+  duration_seconds: number;
 }
 
 // ============================================================================
-// Call Types
-// ============================================================================
-
-export type CallAction = 'ring' | 'accept' | 'reject' | 'end';
-export type CallType = 'audio' | 'video';
-
-export interface CallEvent {
-  conversationId: string;
-  userId: string;
-  action: CallAction;
-  callType?: CallType;
-  roomName?: string;
-}
-
-// ============================================================================
-// API Response Types
-// ============================================================================
-
-export interface ApiError {
-  code: string;
-  message: string;
-}
-
-export interface ApiResponse<T> {
-  data?: T;
-  error?: ApiError;
-}
-
-// ============================================================================
-// Event Emitter Types
+// SDK Event Map (typed event emitter signatures)
 // ============================================================================
 
 export interface ChatEvents {
+  /** WebSocket connected */
   connected: () => void;
+  /** WebSocket disconnected */
   disconnected: (reason?: string) => void;
+  /** Connection or protocol error */
   error: (error: Error) => void;
-  'message:new': (event: NewMessageEvent) => void;
-  'message:updated': (message: Message) => void;
-  'message:deleted': (messageId: string, conversationId: string) => void;
-  'conversation:created': (conversation: Conversation) => void;
-  'conversation:updated': (conversation: Conversation) => void;
-  'participant:joined': (conversationId: string, participant: Participant) => void;
-  'participant:left': (conversationId: string, userId: string) => void;
-  'presence:updated': (event: PresenceEvent) => void;
-  'typing:start': (event: TypingEvent) => void;
-  'typing:stop': (event: TypingEvent) => void;
-  'read:receipt': (event: ReadReceiptEvent) => void;
-  'call:ring': (event: CallEvent) => void;
-  'call:accept': (event: CallEvent) => void;
-  'call:reject': (event: CallEvent) => void;
-  'call:end': (event: CallEvent) => void;
-  // Streaming events
-  'stream:start': (event: StreamStartEvent) => void;
-  'stream:chunk': (event: StreamChunkEvent) => void;
-  'stream:end': (event: StreamEndEvent) => void;
-  'stream:error': (event: StreamErrorEvent) => void;
+  /** Server confirmed subscription */
+  subscribed: (conversationIds: string[]) => void;
+
+  // Conversation events (from server)
+  'message.created': (event: MessageCreatedEvent, conversationId?: string) => void;
+  'task_stream_delta': (event: TaskStreamDeltaEvent, conversationId?: string) => void;
+  'presence.updated': (event: PresenceUpdatedEvent, conversationId?: string) => void;
+  'task.status_updated': (event: TaskStatusUpdatedEvent, conversationId?: string) => void;
+  'conversation.created': (event: ConversationCreatedEvent) => void;
+  'conversation.deleted': (event: ConversationDeletedEvent) => void;
+  'reaction.updated': (event: ReactionUpdatedEvent, conversationId?: string) => void;
+  'call.started': (event: CallStartedEvent, conversationId?: string) => void;
+  'call.answered': (event: CallAnsweredEvent, conversationId?: string) => void;
+  'call.ended': (event: CallEndedEvent, conversationId?: string) => void;
+
+  /** Brain session event (opaque payload) */
+  brain_event: (payload: unknown) => void;
+  /** Session subscription confirmed */
+  session_subscribed: (sessionId: string) => void;
 }
 
 // ============================================================================
-// Streaming Types
+// API Error
 // ============================================================================
 
-/**
- * Request to start an agent streaming session
- */
-export interface AgentStreamRequest {
-  /** Request type identifier */
-  type: 'agent:stream';
-  /** Unique execution identifier */
-  executionId: string;
-  /** Conversation ID */
-  conversationId: string;
-  /** User message to process */
-  message: string;
-  /** Optional agent config ID (uses default if not specified) */
-  agentConfigId?: string;
-}
-
-/**
- * Request to cancel an active stream
- */
-export interface AgentStreamCancelRequest {
-  /** Request type identifier */
-  type: 'agent:stream:cancel';
-  /** Execution ID to cancel */
-  executionId: string;
-}
-
-/**
- * Streaming message types sent from server
- */
-export type StreamMessageType =
-  | 'stream:start'
-  | 'stream:chunk'
-  | 'stream:end'
-  | 'stream:error';
-
-/**
- * Stream start event
- */
-export interface StreamStartEvent {
-  executionId: string;
-  conversationId: string;
-}
-
-/**
- * Stream chunk event - contains a piece of the response
- */
-export interface StreamChunkEvent {
-  executionId: string;
-  conversationId: string;
-  /** The new chunk of text */
-  chunk: string;
-  /** Full accumulated response so far */
-  accumulated: string;
-}
-
-/**
- * Stream end event - streaming completed
- */
-export interface StreamEndEvent {
-  executionId: string;
-  conversationId: string;
-  /** Final accumulated response */
-  accumulated: string;
-  /** Optional metadata about the response */
-  metadata?: StreamMetadata;
-}
-
-/**
- * Stream error event
- */
-export interface StreamErrorEvent {
-  executionId: string;
-  conversationId: string;
-  /** Error message */
-  error: string;
-}
-
-/**
- * Metadata about a streaming response
- */
-export interface StreamMetadata {
-  /** Total tokens used */
-  tokensUsed?: number;
-  /** Model used */
-  model?: string;
-  /** Latency in milliseconds */
-  latencyMs?: number;
-}
-
-/**
- * Streaming state for a conversation
- */
-export interface StreamingState {
-  /** Whether currently streaming */
-  isStreaming: boolean;
-  /** Current execution ID if streaming */
-  executionId?: string;
-  /** Accumulated response text */
-  accumulated: string;
-  /** Error if any */
-  error?: string;
+export class ChatApiError extends Error {
+  constructor(
+    message: string,
+    public readonly status: number,
+    public readonly body?: unknown,
+  ) {
+    super(message);
+    this.name = 'ChatApiError';
+  }
 }

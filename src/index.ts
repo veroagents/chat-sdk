@@ -1,120 +1,80 @@
 /**
- * @veroai/chat - VeroAI Chat SDK
+ * @veroai/chat — Real-time messaging with AI agents
  *
- * Real-time messaging with AI agents
- *
- * @example Vanilla JavaScript/TypeScript
+ * @example
  * ```typescript
  * import { ChatClient } from '@veroai/chat';
  *
- * const chat = new ChatClient({
- *   apiUrl: 'https://api.veroai.dev',
- *   wsUrl: 'wss://ws.veroai.dev',
+ * const client = new ChatClient({
+ *   apiUrl: 'https://api.veroagents.com',
+ *   wsUrl: 'wss://ws.veroagents.com/ws',
  *   token: 'your-jwt-token',
  * });
  *
- * // Connect to real-time events
- * await chat.connect();
+ * // REST API
+ * const conversations = await client.api.listConversations();
+ * await client.api.send({ conversationId: 'conv-1', contentText: 'Hello!' });
  *
- * // Listen for new messages
- * chat.on('message:new', ({ message }) => {
- *   console.log('New message:', message.content);
+ * // Real-time events
+ * await client.connect();
+ * client.subscribe(['conv-1']);
+ * client.on('message.created', (event, conversationId) => {
+ *   console.log('New message in', conversationId, event);
  * });
- *
- * // Send a message
- * await chat.send(conversationId, 'Hello!');
- * ```
- *
- * @example React
- * ```tsx
- * import { ChatProvider, useChat, useConversation } from '@veroai/chat/react';
- *
- * function App() {
- *   return (
- *     <ChatProvider config={{ apiUrl: '...', wsUrl: '...', token: '...' }}>
- *       <ChatInterface />
- *     </ChatProvider>
- *   );
- * }
- *
- * function ChatInterface() {
- *   const { conversations, isConnected } = useChat();
- *   const { messages, send } = useConversation(selectedId);
- *
- *   return <div>...</div>;
- * }
  * ```
  */
 
 // Main client
 export { ChatClient } from './client';
 
-// API client (for advanced usage)
-export { ChatApi, type RoomInfo } from './api';
+// API client (for standalone usage)
+export { ChatApi } from './api';
 
-// WebSocket manager (for advanced usage)
-export { WebSocketManager } from './websocket';
+// WebSocket client (for standalone usage)
+export { ChatSocket } from './websocket';
 
-// Types
-export type {
-  // Configuration
-  ChatClientConfig,
-
-  // Token generation (server-side)
-  GenerateTokenOptions,
-  GenerateTokenResult,
-  ChatUser,
-
-  // User types
-  User,
-  PresenceStatus,
-  UserPresence,
-
-  // Conversation types
-  ConversationType,
-  Conversation,
-  Participant,
-  CreateConversationParams,
-
-  // Message types
-  MessageType,
-  Message,
-  ReadReceipt,
-  SendMessageParams,
-  GetMessagesParams,
-  PaginatedMessages,
-
-  // Agent types
-  AgentConfig,
-
-  // WebSocket event types
-  WebSocketEventType,
-  WebSocketMessage,
-  NewMessageEvent,
-  TypingEvent,
-  PresenceEvent,
-  ReadReceiptEvent,
-
-  // Call types
-  CallAction,
-  CallType,
-  CallEvent,
-
-  // Streaming types
-  AgentStreamRequest,
-  AgentStreamCancelRequest,
-  StreamMessageType,
-  StreamStartEvent,
-  StreamChunkEvent,
-  StreamEndEvent,
-  StreamErrorEvent,
-  StreamMetadata,
-  StreamingState,
-
-  // Event emitter types
-  ChatEvents,
-
-  // API types
-  ApiError,
-  ApiResponse,
+// All types
+export {
+  ChatApiError,
+  type ChatConfig,
+  type ConversationType,
+  type ContentType,
+  type SenderType,
+  type ThreadRole,
+  type ParticipantRole,
+  type DeleteMode,
+  type ReactionGroup,
+  type Message,
+  type ConversationContact,
+  type Conversation,
+  type Participant,
+  type User,
+  type Agent,
+  type SendMessageParams,
+  type GetMessagesParams,
+  type GetMessagesResponse,
+  type SyncConversation,
+  type SyncBatch,
+  type SyncResponse,
+  type CreateConversationParams,
+  type CreateConversationResponse,
+  type UpdateConversationParams,
+  type ToggleReactionResponse,
+  type ForwardResponse,
+  type MessagingTokenResponse,
+  type ClientAction,
+  type ClientWsMessage,
+  type ServerWsMessage,
+  type ServerEventType,
+  type MessageCreatedEvent,
+  type TaskStreamDeltaEvent,
+  type PresenceUpdatedEvent,
+  type TaskStatusUpdatedEvent,
+  type ConversationCreatedEvent,
+  type ConversationDeletedEvent,
+  type ReactionUpdatedEvent,
+  type CallStartedEvent,
+  type CallAnsweredEvent,
+  type CallEndedEvent,
+  type ChatEvents,
 } from './types';
