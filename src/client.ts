@@ -62,23 +62,41 @@ export class ChatClient extends EventEmitter<ChatEvents> {
   /**
    * Connect to the WebSocket server.
    *
-   * If no wsUrl is configured, the client will first call
-   * GET /v1/messaging/token to obtain a token and ws_url.
+   * Automatically calls GET /v1/messaging/token to obtain a msgsrv-compatible
+   * token and WebSocket URL. The REST API token (VeroAI JWT) and the WebSocket
+   * token (msgsrv JWT) are different — this method handles the exchange.
    */
   async connect(): Promise<void> {
     if (this.socket?.isConnected()) return;
 
+    // Fetch a WebSocket-specific token via the messaging endpoint.
+    // This exchanges the VeroAI JWT for a msgsrv-compatible JWT.
     let wsUrl = this.config.wsUrl ?? DEFAULT_WS_URL;
-    let wsTokenGetter = this.tokenGetter;
+    let wsToken: string | null = null;
 
-    // If the caller wants to use the messaging token endpoint:
-    // They can set wsUrl to empty string or omit it and we use default.
-    // The token is always fetched via the tokenGetter (same JWT for both).
+    try {
+      const messaging = await this.api.getMessagingToken();
+      wsToken = messaging.token;
+      if (messaging.wsUrl) wsUrl = messaging.wsUrl;
+    } catch {
+      // If messaging token endpoint is unavailable, fall back to using the
+      // same token as REST (works when VeroAI JWT and msgsrv JWT are the same).
+      wsToken = await this.tokenGetter();
+    }
 
     if (!this.socket) {
       const socketConfig: ChatSocketConfig = {
         url: wsUrl,
-        getToken: wsTokenGetter,
+        // Use the msgsrv token for WebSocket, refreshing via getMessagingToken
+        getToken: async () => {
+          try {
+            const messaging = await this.api.getMessagingToken();
+            // wsUrl is fixed at socket creation time; reconnects use the same URL
+            return messaging.token;
+          } catch {
+            return this.tokenGetter();
+          }
+        },
         autoReconnect: this.config.autoReconnect ?? true,
         reconnectInterval: this.config.reconnectInterval,
         maxReconnectAttempts: this.config.maxReconnectAttempts,

@@ -1,17 +1,17 @@
 # @veroai/chat
 
-Real-time messaging SDK for VeroAI applications. Provides HTTP API client, WebSocket connection management, and React integration for building chat interfaces with AI agents.
+Real-time messaging SDK for VeroAI applications. Provides an HTTP API client, WebSocket connection management, and typed events for building chat interfaces with AI agents.
 
 ## Features
 
-- **Real-time messaging** - WebSocket-based with auto-reconnect
-- **Typing indicators** - Show when users are typing
-- **Presence tracking** - Online/away/busy/offline status
-- **Read receipts** - Track message read status
-- **Voice/video calls** - Vero Voice integration for WebRTC calls
-- **AI agents** - Built-in support for AI agent conversations
-- **React hooks** - Ready-to-use hooks for React applications
-- **TypeScript** - Full type safety
+- **Real-time messaging** - WebSocket-based with auto-reconnect and exponential backoff
+- **Conversation management** - Create, update, delete conversations with participants
+- **Message reactions** - Toggle emoji reactions on messages
+- **Message forwarding** - Forward messages across conversations
+- **Batch sync** - Sync multiple conversations in a single request
+- **AI agents** - Built-in support for agent conversations and brain session events
+- **Voice/video calls** - Call lifecycle events (started, answered, ended)
+- **TypeScript** - Full type safety with camelCase API over snake_case server protocol
 
 ## Installation
 
@@ -25,107 +25,45 @@ yarn add @veroai/chat
 
 ## Quick Start
 
-### Vanilla TypeScript/JavaScript
-
 ```typescript
 import { ChatClient } from '@veroai/chat';
 
-const chat = new ChatClient({
-  apiUrl: 'https://api.veroai.dev',
-  wsUrl: 'wss://ws.veroai.dev',
+const client = new ChatClient({
+  apiUrl: 'https://api.veroagents.com',
   token: 'your-jwt-token',
 });
 
-// Connect to real-time events
-await chat.connect();
+// REST API
+const conversations = await client.api.listConversations();
+await client.api.send({ conversationId: 'conv-1', contentText: 'Hello!' });
 
-// Listen for new messages
-chat.on('message:new', ({ message, conversationId }) => {
-  console.log('New message:', message.content);
+// Real-time events
+await client.connect();
+client.subscribe(['conv-1']);
+client.on('message.created', (event, conversationId) => {
+  console.log('New message in', conversationId, event);
 });
-
-// Send a message
-await chat.send(conversationId, 'Hello!');
-```
-
-### React
-
-```tsx
-import { ChatProvider, useChat, useConversation } from '@veroai/chat/react';
-
-function App() {
-  return (
-    <ChatProvider
-      config={{
-        apiUrl: 'https://api.veroai.dev',
-        wsUrl: 'wss://ws.veroai.dev',
-        token: authToken,
-      }}
-    >
-      <ChatApp />
-    </ChatProvider>
-  );
-}
-
-function ChatApp() {
-  const { conversations, isConnected } = useChat();
-
-  return (
-    <div>
-      <p>Status: {isConnected ? 'Connected' : 'Disconnected'}</p>
-      {conversations.map(conv => (
-        <ConversationItem key={conv.id} conversation={conv} />
-      ))}
-    </div>
-  );
-}
-
-function ChatRoom({ conversationId }) {
-  const { messages, send, typingUsers, startTyping, stopTyping } = useConversation(conversationId);
-  const [input, setInput] = useState('');
-
-  return (
-    <div>
-      {messages.map(m => <Message key={m.id} message={m} />)}
-      {typingUsers.length > 0 && <p>Someone is typing...</p>}
-      <input
-        value={input}
-        onChange={(e) => {
-          setInput(e.target.value);
-          startTyping();
-        }}
-        onBlur={stopTyping}
-        onKeyDown={(e) => {
-          if (e.key === 'Enter') {
-            send(input);
-            setInput('');
-          }
-        }}
-      />
-    </div>
-  );
-}
 ```
 
 ## Configuration
 
 ```typescript
-interface ChatClientConfig {
-  /** VeroAI API URL */
-  apiUrl: string;
-  /** WebSocket URL for real-time events */
+interface ChatConfig {
+  /** VeroAI API base URL (default: https://api.veroagents.com) */
+  apiUrl?: string;
+  /** WebSocket URL for real-time events (default: wss://ws.veroagents.com/ws) */
   wsUrl?: string;
-  /** JWT authentication token */
+  /** Static JWT token for authentication */
   token?: string;
-  /** Dynamic token getter (for token refresh) */
+  /** Async token getter (takes precedence over static token) */
   getToken?: () => string | null | Promise<string | null>;
-  /** Auto-connect to WebSocket on initialization */
+  /** Auto-connect WebSocket on client creation */
   autoConnect?: boolean;
   /** Auto-reconnect on disconnect (default: true) */
   autoReconnect?: boolean;
-  /** Reconnect interval in ms (default: 3000) */
+  /** Base reconnect interval in ms (default: 2000) */
   reconnectInterval?: number;
-  /** Max reconnect attempts (default: 10) */
+  /** Max reconnect attempts (default: 15) */
   maxReconnectAttempts?: number;
 }
 ```
@@ -134,385 +72,249 @@ interface ChatClientConfig {
 
 ### ChatClient
 
+The main entry point combining REST API + WebSocket into a single client.
+
 #### Connection Management
 
 ```typescript
-// Connect to WebSocket
-await chat.connect();
+// Connect to WebSocket (exchanges VeroAI JWT for a msgsrv-compatible token automatically)
+await client.connect();
 
 // Disconnect
-chat.disconnect();
+client.disconnect();
 
 // Check connection status
-chat.isConnected();
+client.isConnected();
 
 // Update auth token
-chat.setToken(newToken);
+client.setToken(newToken);
 ```
 
-#### Conversations
+#### Subscriptions
+
+```typescript
+// Subscribe to real-time events for conversations
+client.subscribe(['conv-1', 'conv-2']);
+
+// Unsubscribe from conversation events
+client.unsubscribe(['conv-1']);
+
+// Subscribe to a brain session for live events
+client.subscribeSession(sessionId);
+
+// Unsubscribe from a brain session
+client.unsubscribeSession(sessionId);
+```
+
+#### REST API (`client.api`)
+
+All HTTP methods are accessed via `client.api`:
+
+##### Messages
+
+```typescript
+// Send a message
+const message = await client.api.send({
+  conversationId: 'conv-1',
+  contentText: 'Hello!',
+  contentType: 'text',       // 'text' | 'image' | 'audio' | 'video' | 'file' | 'task' | 'result' | 'system'
+  replyToId: 'msg-id',       // optional: reply to a message
+  threadRole: 'main',        // 'main' | 'aside'
+  taskId: 'task-id',         // optional: associate with a task
+});
+
+// Get messages (paginated by sequence number)
+const { messages, currentSeq } = await client.api.getMessages('conv-1', {
+  fromSeq: 0,
+  toSeq: 100,
+  limit: 50,
+});
+
+// Batch sync multiple conversations
+const { batches } = await client.api.sync([
+  { conversationId: 'conv-1', lastSeq: 42 },
+  { conversationId: 'conv-2', lastSeq: 10 },
+]);
+
+// Toggle emoji reaction
+const { action } = await client.api.toggleReaction('msg-id', 'conv-1', '👍');
+// action: 'added' | 'removed'
+
+// Forward a message to other conversations
+const { forwarded } = await client.api.forward('msg-id', ['conv-2', 'conv-3']);
+```
+
+##### Conversations
 
 ```typescript
 // List all conversations
-const conversations = await chat.listConversations();
+const conversations = await client.api.listConversations();
 
-// Get a specific conversation
-const conversation = await chat.getConversation(conversationId);
-
-// Create a new conversation
-const newConv = await chat.createConversation({
-  type: 'direct', // 'direct' | 'group' | 'channel'
-  participantIds: ['user-id-1', 'user-id-2'],
-  name: 'Optional name for groups',
+// Create a conversation
+const newConv = await client.api.createConversation({
+  type: 'direct',  // 'direct' | 'group' | 'agent_direct' | 'agent_group'
+  participantIds: ['user-1', 'user-2'],
+  name: 'Optional name',
 });
 
-// Mark conversation as read
-await chat.markConversationRead(conversationId);
+// Update a conversation
+await client.api.updateConversation('conv-1', {
+  name: 'New Name',
+  description: 'Updated description',
+});
 
-// Leave a conversation
-await chat.leaveConversation(conversationId);
+// Mark conversation as read up to a sequence number
+await client.api.markRead('conv-1', 42);
 
-// Subscribe to real-time updates
-chat.subscribeToConversation(conversationId);
-chat.unsubscribeFromConversation(conversationId);
+// Delete a conversation
+await client.api.deleteConversation('conv-1', 'for_me'); // 'for_me' | 'for_everyone'
+
+// Manage participants
+await client.api.addParticipants('conv-1', ['user-3', 'user-4']);
+await client.api.removeParticipant('conv-1', 'user-3');
+const participants = await client.api.getParticipants('conv-1');
 ```
 
-#### Messages
+##### Users & Agents
 
 ```typescript
-// Get messages (paginated)
-const { messages, hasMore, total } = await chat.getMessages(conversationId, {
-  limit: 50,
-  before: 'message-id', // For pagination
-});
+// List users
+const users = await client.api.listUsers();
 
-// Send a message
-const message = await chat.sendMessage(conversationId, {
-  content: 'Hello!',
-  messageType: 'text', // 'text' | 'system' | 'agent' | 'file'
-  metadata: { custom: 'data' },
-});
-
-// Convenience method
-await chat.send(conversationId, 'Hello!');
+// List agents
+const agents = await client.api.listAgents();
 ```
 
-#### Typing Indicators
+##### Messaging Token
 
 ```typescript
-// Send typing indicator
-chat.sendTypingStart(conversationId);
-chat.sendTypingStop(conversationId);
-```
-
-#### Users & Presence
-
-```typescript
-// List users (contacts)
-const users = await chat.listUsers({ includeVirtual: true });
-
-// Get online users
-const onlineUsers = await chat.getOnlineUsers();
-
-// Get current user profile
-const me = await chat.getCurrentUser();
-
-// Get specific user
-const user = await chat.getUser(userId);
-
-// Update presence status
-await chat.updateStatus('online', 'Working on something cool');
-// Status: 'online' | 'away' | 'busy' | 'offline'
-```
-
-#### AI Agents
-
-```typescript
-// List available agents
-const agents = await chat.listAgents();
-
-// Add agent to conversation
-await chat.addAgentToConversation(conversationId, agentConfigId);
-
-// Remove agent from conversation
-await chat.removeAgentFromConversation(conversationId);
-
-// Toggle agent enabled/disabled
-await chat.toggleAgent(conversationId, true);
-```
-
-#### Voice/Video Calls
-
-The SDK integrates with Vero Voice for WebRTC voice and video calls. Call signaling (ring, accept, reject, end) is handled via WebSocket, while actual media streams go through Vero Voice.
-
-```typescript
-// Create a room
-const room = await chat.createRoom({
-  name: 'call-room-123',
-  emptyTimeout: 300, // seconds
-  maxParticipants: 10,
-});
-// Returns: { name, wsUrl, token }
-
-// Join an existing room
-const room = await chat.joinRoom({
-  roomName: 'call-room-123',
-  participantName: 'John Doe',
-  canPublish: true,
-  canSubscribe: true,
-});
-
-// Start a call (creates room + notifies participants)
-const room = await chat.startCall(conversationId, 'video'); // 'audio' | 'video'
-
-// Accept an incoming call
-chat.on('call:ring', async ({ conversationId, roomName, callType }) => {
-  const room = await chat.acceptCall(conversationId, roomName, 'My Name');
-  // Connect to Vero Voice using room.wsUrl and room.token
-});
-
-// Reject a call
-chat.rejectCall(conversationId);
-
-// End a call
-chat.endCall(conversationId);
+// Get a WebSocket auth token (used internally by connect())
+const { token, wsUrl, expiresAt } = await client.api.getMessagingToken();
 ```
 
 ### Events
 
 ```typescript
 // Connection events
-chat.on('connected', () => { /* WebSocket connected */ });
-chat.on('disconnected', (reason) => { /* WebSocket disconnected */ });
-chat.on('error', (error) => { /* Error occurred */ });
+client.on('connected', () => { /* WebSocket connected */ });
+client.on('disconnected', (reason?) => { /* WebSocket disconnected */ });
+client.on('error', (error) => { /* Error occurred */ });
+client.on('subscribed', (conversationIds) => { /* Subscription confirmed */ });
 
 // Message events
-chat.on('message:new', ({ message, conversationId }) => { });
-chat.on('message:updated', (message) => { });
-chat.on('message:deleted', (messageId, conversationId) => { });
+client.on('message.created', (event, conversationId?) => {
+  // event: { message_id, seq_num, is_internal? }
+});
 
-// Conversation events
-chat.on('conversation:created', (conversation) => { });
-chat.on('conversation:updated', (conversation) => { });
-chat.on('participant:joined', (conversationId, participant) => { });
-chat.on('participant:left', (conversationId, userId) => { });
+// Task/agent streaming
+client.on('task_stream_delta', (event, conversationId?) => {
+  // event: { delta, agent_id, session_id }
+});
 
-// Presence events
-chat.on('presence:updated', ({ userId, status, statusMessage }) => { });
+// Presence
+client.on('presence.updated', (event, conversationId?) => {
+  // event: { agent_id?, user_id?, status, status_detail? }
+});
 
-// Typing events
-chat.on('typing:start', ({ conversationId, userId, userName }) => { });
-chat.on('typing:stop', ({ conversationId, userId }) => { });
+// Task status
+client.on('task.status_updated', (event, conversationId?) => {
+  // event: { task_id, status, current_step?, progress_narrative?, agent_id? }
+});
 
-// Read receipt events
-chat.on('read:receipt', ({ conversationId, messageId, userId, readAt }) => { });
+// Conversation lifecycle
+client.on('conversation.created', (event) => {
+  // event: { conversation_id, contact_name?, contact_id?, group_name? }
+});
+client.on('conversation.deleted', (event) => {
+  // event: { conversation_id }
+});
+
+// Reactions
+client.on('reaction.updated', (event, conversationId?) => {
+  // event: { message_id, emoji, action: 'added' | 'removed', user_id }
+});
 
 // Call events
-chat.on('call:ring', ({ conversationId, userId, callType, roomName }) => { });
-chat.on('call:accept', ({ conversationId, userId, roomName }) => { });
-chat.on('call:reject', ({ conversationId, userId }) => { });
-chat.on('call:end', ({ conversationId, userId }) => { });
-```
+client.on('call.started', (event, conversationId?) => {
+  // event: { call_id, room_name, call_type, conversation_id, initiator_id }
+});
+client.on('call.answered', (event, conversationId?) => {
+  // event: { call_id, conversation_id, answered_by }
+});
+client.on('call.ended', (event, conversationId?) => {
+  // event: { call_id, conversation_id, duration_seconds }
+});
 
-## React Hooks
-
-### ChatProvider
-
-Wrap your app with `ChatProvider` to enable chat functionality:
-
-```tsx
-import { ChatProvider } from '@veroai/chat/react';
-
-<ChatProvider
-  config={{
-    apiUrl: 'https://api.veroai.dev',
-    wsUrl: 'wss://ws.veroai.dev',
-    token: authToken,
-  }}
-  autoFetchConversations={true}
-  autoFetchCurrentUser={true}
->
-  {children}
-</ChatProvider>
-```
-
-### useChat
-
-Access chat context and global state:
-
-```tsx
-import { useChat } from '@veroai/chat/react';
-
-function MyComponent() {
-  const {
-    client,              // ChatClient instance
-    isConnected,         // WebSocket connection status
-    currentUser,         // Current user profile
-    conversations,       // List of conversations
-    isLoadingConversations,
-    refreshConversations,
-    connect,
-    disconnect,
-    updateStatus,
-  } = useChat();
-}
-```
-
-### useChatClient
-
-Get direct access to the ChatClient:
-
-```tsx
-import { useChatClient } from '@veroai/chat/react';
-
-function MyComponent() {
-  const client = useChatClient();
-  // Use client directly for advanced operations
-}
-```
-
-### useConversation
-
-Manage a single conversation with real-time updates:
-
-```tsx
-import { useConversation } from '@veroai/chat/react';
-
-function ChatRoom({ conversationId }) {
-  const {
-    conversation,    // Conversation object
-    messages,        // Messages array
-    isLoading,       // Loading state
-    hasMore,         // More messages available
-    typingUsers,     // Users currently typing
-    sendMessage,     // Send message with params
-    send,            // Send text message (convenience)
-    loadMore,        // Load older messages
-    refresh,         // Refresh messages
-    markAsRead,      // Mark conversation as read
-    startTyping,     // Send typing indicator
-    stopTyping,      // Stop typing indicator
-    error,           // Error if any
-  } = useConversation(conversationId, {
-    autoFetchMessages: true,
-    initialMessageLimit: 50,
-    autoSubscribe: true,
-  });
-}
-```
-
-### usePresence
-
-Track online users and presence status:
-
-```tsx
-import { usePresence } from '@veroai/chat/react';
-
-function OnlineUsers() {
-  const {
-    onlineUsers,     // Array of online users
-    isLoading,
-    getUserStatus,   // Get status for specific user
-    refresh,
-    error,
-  } = usePresence();
-
-  return (
-    <ul>
-      {onlineUsers.map(user => (
-        <li key={user.id}>
-          {user.firstName} - {getUserStatus(user.id)}
-        </li>
-      ))}
-    </ul>
-  );
-}
-```
-
-### useUserPresence
-
-Track presence for a specific user:
-
-```tsx
-import { useUserPresence } from '@veroai/chat/react';
-
-function UserStatus({ userId }) {
-  const { status, isOnline } = useUserPresence(userId);
-
-  return (
-    <span className={isOnline ? 'text-green-500' : 'text-gray-400'}>
-      {status}
-    </span>
-  );
-}
+// Brain session events
+client.on('brain_event', (payload) => { /* opaque payload */ });
+client.on('session_subscribed', (sessionId) => { /* session subscription confirmed */ });
 ```
 
 ## Types
 
 ```typescript
-// User types
-type PresenceStatus = 'online' | 'away' | 'busy' | 'offline';
-
-interface User {
-  id: string;
-  email?: string;
-  firstName?: string;
-  lastName?: string;
-  isVirtual?: boolean;
-  agentConfigId?: string;
-  status?: PresenceStatus;
-  statusMessage?: string;
-  lastSeen?: string;
-}
-
 // Conversation types
-type ConversationType = 'direct' | 'group' | 'channel' | 'support';
-
-interface Conversation {
-  id: string;
-  name?: string;
-  type: ConversationType;
-  isActive: boolean;
-  lastMessageAt?: string;
-  agentEnabled?: boolean;
-  agentConfigId?: string;
-  participants?: Participant[];
-  unreadCount?: number;
-  metadata?: Record<string, unknown>;
-}
-
-// Message types
-type MessageType = 'text' | 'system' | 'agent' | 'file' | 'call';
+type ConversationType = 'direct' | 'group' | 'agent_direct' | 'agent_group';
+type ContentType = 'text' | 'image' | 'audio' | 'video' | 'file' | 'task' | 'result' | 'system';
+type SenderType = 'human' | 'agent';
+type ThreadRole = 'main' | 'aside';
+type ParticipantRole = 'owner' | 'admin' | 'member' | 'agent';
+type DeleteMode = 'for_me' | 'for_everyone';
 
 interface Message {
   id: string;
   conversationId: string;
-  content: string;
-  messageType: MessageType;
-  senderId?: string;
-  sender?: User;
-  readBy?: ReadReceipt[];
-  metadata?: Record<string, unknown>;
-  createdAt?: string;
+  seqNum: number;
+  senderId: string;
+  senderType: SenderType;
+  contentType: ContentType;
+  contentText: string;
+  contentMeta?: string;
+  replyToId?: string;
+  threadId?: string;
+  threadRole: ThreadRole;
+  taskId?: string;
+  createdAt: string;
+  isInternal?: boolean;
+  isForwarded?: boolean;
+  reactions?: ReactionGroup[];
 }
 
-// Call types
-type CallAction = 'ring' | 'accept' | 'reject' | 'end';
-type CallType = 'audio' | 'video';
+interface Conversation {
+  id: string;
+  type: ConversationType;
+  name?: string;
+  description?: string;
+  createdBy: string;
+  lastActivity?: string;
+  seqCounter: number;
+  createdAt: string;
+  lastMessagePreview?: string;
+  unreadCount: number;
+  contact?: ConversationContact;
+}
 
-interface CallEvent {
-  conversationId: string;
+interface User {
+  id: string;
+  displayName: string;
+  isAgent: boolean;
+  status: string;
+  bio?: string;
+  avatarUrl?: string;
+  lastSeen?: string;
+  jobTitle?: string;
+  language?: string;
+  isDefaultAgent?: boolean;
+}
+
+interface Participant {
   userId: string;
-  action: CallAction;
-  callType?: CallType;
-  roomName?: string;
-}
-
-// Room info (for Vero Voice)
-interface RoomInfo {
-  name: string;
-  wsUrl: string;
-  token: string;
+  displayName: string;
+  isAgent: boolean;
+  role: ParticipantRole;
+  avatarUrl?: string;
+  status?: string;
+  jobTitle?: string;
 }
 ```
 
@@ -521,11 +323,8 @@ interface RoomInfo {
 ### Custom Token Refresh
 
 ```typescript
-const chat = new ChatClient({
-  apiUrl: 'https://api.veroai.dev',
-  wsUrl: 'wss://ws.veroai.dev',
+const client = new ChatClient({
   getToken: async () => {
-    // Check if token is expired
     const token = localStorage.getItem('token');
     if (isExpired(token)) {
       const newToken = await refreshToken();
@@ -545,13 +344,11 @@ For server-side usage or when you don't need WebSocket:
 import { ChatApi } from '@veroai/chat';
 
 const api = new ChatApi({
-  apiUrl: 'https://api.veroai.dev',
+  apiUrl: 'https://api.veroagents.com',
   getToken: () => localStorage.getItem('token'),
 });
 
-// Use API directly without WebSocket
 const conversations = await api.listConversations();
-const room = await api.createRoom({ name: 'my-room' });
 ```
 
 ### Direct WebSocket Access
@@ -559,19 +356,19 @@ const room = await api.createRoom({ name: 'my-room' });
 For custom WebSocket handling:
 
 ```typescript
-import { WebSocketManager } from '@veroai/chat';
+import { ChatSocket } from '@veroai/chat';
 
-const ws = new WebSocketManager({
-  url: 'wss://ws.veroai.dev',
+const socket = new ChatSocket({
+  url: 'wss://ws.veroagents.com/ws',
   getToken: () => localStorage.getItem('token'),
   autoReconnect: true,
-  heartbeatInterval: 30000,
+  reconnectInterval: 2000,
+  maxReconnectAttempts: 15,
 });
 
-await ws.connect();
-ws.on('message:new', handleNewMessage);
-ws.sendTypingStart(conversationId);
-ws.sendCallNotification(conversationId, 'ring', 'video', roomName);
+await socket.connect();
+socket.subscribe(['conv-1', 'conv-2']);
+socket.on('message.created', (event, conversationId) => { ... });
 ```
 
 ## License
