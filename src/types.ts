@@ -61,6 +61,10 @@ export interface Message {
   isInternal?: boolean;
   isForwarded?: boolean;
   reactions?: ReactionGroup[];
+  /** Number of times this message has been edited. 0 if never edited. */
+  editCount?: number;
+  /** ISO timestamp of last edit, if any. */
+  editedAt?: string;
 }
 
 export interface ConversationContact {
@@ -88,6 +92,10 @@ export interface Conversation {
   lastMessagePreview?: string;
   unreadCount: number;
   contact?: ConversationContact;
+  /** ISO timestamp until which conversation is muted. Null/absent = not muted. */
+  mutedUntil?: string | null;
+  /** ISO timestamp at which conversation was archived. Null/absent = not archived. */
+  archivedAt?: string | null;
 }
 
 export interface Participant {
@@ -188,6 +196,81 @@ export interface MessagingTokenResponse {
 }
 
 // ============================================================================
+// Bundle A — edit / typing / unread / search
+// ============================================================================
+
+export interface EditMessageParams {
+  contentText: string;
+  contentMeta?: string;
+}
+
+export interface EditMessageResponse {
+  messageId: string;
+  contentText: string;
+  editCount: number;
+  editedAt: string;
+}
+
+export type TypingState = 'start' | 'stop';
+
+export interface UnreadCount {
+  conversationId: string;
+  unreadCount: number;
+  lastReadSeq: number;
+}
+
+export interface UnreadCountsResponse {
+  conversations: UnreadCount[];
+  total: number;
+}
+
+export interface SearchMessagesParams {
+  q: string;
+  conversationId?: string;
+  limit?: number;
+  beforeSeq?: number;
+}
+
+export interface SearchResult {
+  message: Message;
+  snippet: string;
+}
+
+export interface SearchMessagesResponse {
+  results: SearchResult[];
+}
+
+// ============================================================================
+// Bundle B — mute / archive / block
+// ============================================================================
+
+export interface MuteParams {
+  /** ISO 8601 timestamp; mutes until this time. */
+  until?: string;
+  /** Seconds from now; mutes for this duration. Ignored if `until` is set. */
+  durationSec?: number;
+}
+
+export interface MuteResponse {
+  conversationId: string;
+  mutedUntil: string;
+}
+
+export interface ArchiveResponse {
+  conversationId: string;
+  archivedAt: string;
+}
+
+export interface BlockedUser {
+  userId: string;
+  createdAt: string;
+}
+
+export interface ListBlockedResponse {
+  blocked: BlockedUser[];
+}
+
+// ============================================================================
 // WebSocket Protocol Types
 // ============================================================================
 
@@ -263,12 +346,21 @@ export type ServerWsMessage =
 
 export type ServerEventType =
   | 'message.created'
+  | 'message.edited'
   | 'task_stream_delta'
   | 'presence.updated'
   | 'task.status_updated'
   | 'conversation.created'
   | 'conversation.deleted'
+  | 'conversation.muted'
+  | 'conversation.unmuted'
+  | 'conversation.archived'
+  | 'conversation.unarchived'
   | 'reaction.updated'
+  | 'typing.start'
+  | 'typing.stop'
+  | 'user.blocked'
+  | 'user.unblocked'
   | 'call.started'
   | 'call.answered'
   | 'call.ended';
@@ -338,6 +430,47 @@ export interface CallEndedEvent {
   duration_seconds: number;
 }
 
+export interface MessageEditedEvent {
+  id: string;
+  conversation_id: string;
+  content_text: string;
+  content_meta?: string;
+  edit_count: number;
+  edited_at: string;
+}
+
+export interface TypingEvent {
+  conversation_id: string;
+  user_id: string;
+  at: string;
+}
+
+export interface ConversationMutedEvent {
+  conversation_id: string;
+  muted_until: string;
+}
+
+export interface ConversationUnmutedEvent {
+  conversation_id: string;
+}
+
+export interface ConversationArchivedEvent {
+  conversation_id: string;
+  archived_at: string;
+}
+
+export interface ConversationUnarchivedEvent {
+  conversation_id: string;
+}
+
+export interface UserBlockedEvent {
+  user_id: string;
+}
+
+export interface UserUnblockedEvent {
+  user_id: string;
+}
+
 // ============================================================================
 // SDK Event Map (typed event emitter signatures)
 // ============================================================================
@@ -363,6 +496,17 @@ export interface ChatEvents {
   'call.started': (event: CallStartedEvent, conversationId?: string) => void;
   'call.answered': (event: CallAnsweredEvent, conversationId?: string) => void;
   'call.ended': (event: CallEndedEvent, conversationId?: string) => void;
+
+  // Bundle A + B events
+  'message.edited': (event: MessageEditedEvent, conversationId?: string) => void;
+  'typing.start': (event: TypingEvent, conversationId?: string) => void;
+  'typing.stop': (event: TypingEvent, conversationId?: string) => void;
+  'conversation.muted': (event: ConversationMutedEvent) => void;
+  'conversation.unmuted': (event: ConversationUnmutedEvent) => void;
+  'conversation.archived': (event: ConversationArchivedEvent) => void;
+  'conversation.unarchived': (event: ConversationUnarchivedEvent) => void;
+  'user.blocked': (event: UserBlockedEvent) => void;
+  'user.unblocked': (event: UserUnblockedEvent) => void;
 
   /** Brain session event (opaque payload) */
   brain_event: (payload: unknown) => void;

@@ -21,6 +21,14 @@ import type {
   CallStartedEvent,
   CallAnsweredEvent,
   CallEndedEvent,
+  MessageEditedEvent,
+  TypingEvent,
+  ConversationMutedEvent,
+  ConversationUnmutedEvent,
+  ConversationArchivedEvent,
+  ConversationUnarchivedEvent,
+  UserBlockedEvent,
+  UserUnblockedEvent,
 } from './types';
 
 export interface ChatSocketConfig {
@@ -313,6 +321,33 @@ export class ChatSocket extends EventEmitter<ChatEvents> {
         break;
       case 'call.ended':
         this.emit('call.ended', eventPayload as CallEndedEvent, convId);
+        break;
+      case 'message.edited':
+        this.emit('message.edited', eventPayload as MessageEditedEvent, convId);
+        break;
+      case 'typing.start':
+        this.emit('typing.start', eventPayload as TypingEvent, convId);
+        break;
+      case 'typing.stop':
+        this.emit('typing.stop', eventPayload as TypingEvent, convId);
+        break;
+      case 'conversation.muted':
+        this.emit('conversation.muted', eventPayload as ConversationMutedEvent);
+        break;
+      case 'conversation.unmuted':
+        this.emit('conversation.unmuted', eventPayload as ConversationUnmutedEvent);
+        break;
+      case 'conversation.archived':
+        this.emit('conversation.archived', eventPayload as ConversationArchivedEvent);
+        break;
+      case 'conversation.unarchived':
+        this.emit('conversation.unarchived', eventPayload as ConversationUnarchivedEvent);
+        break;
+      case 'user.blocked':
+        this.emit('user.blocked', eventPayload as UserBlockedEvent);
+        break;
+      case 'user.unblocked':
+        this.emit('user.unblocked', eventPayload as UserUnblockedEvent);
         break;
     }
   }

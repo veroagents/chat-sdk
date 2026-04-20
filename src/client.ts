@@ -168,6 +168,17 @@ export class ChatClient extends EventEmitter<ChatEvents> {
     this.socket.on('call.answered', (ev, cid) => this.emit('call.answered', ev, cid));
     this.socket.on('call.ended', (ev, cid) => this.emit('call.ended', ev, cid));
 
+    // Bundle A + B events
+    this.socket.on('message.edited', (ev, cid) => this.emit('message.edited', ev, cid));
+    this.socket.on('typing.start', (ev, cid) => this.emit('typing.start', ev, cid));
+    this.socket.on('typing.stop', (ev, cid) => this.emit('typing.stop', ev, cid));
+    this.socket.on('conversation.muted', (ev) => this.emit('conversation.muted', ev));
+    this.socket.on('conversation.unmuted', (ev) => this.emit('conversation.unmuted', ev));
+    this.socket.on('conversation.archived', (ev) => this.emit('conversation.archived', ev));
+    this.socket.on('conversation.unarchived', (ev) => this.emit('conversation.unarchived', ev));
+    this.socket.on('user.blocked', (ev) => this.emit('user.blocked', ev));
+    this.socket.on('user.unblocked', (ev) => this.emit('user.unblocked', ev));
+
     // Brain events
     this.socket.on('brain_event', (p) => this.emit('brain_event', p));
     this.socket.on('session_subscribed', (sid) => this.emit('session_subscribed', sid));

@@ -29,6 +29,17 @@ import {
   type SenderType,
   type ThreadRole,
   type ConversationType,
+  type EditMessageParams,
+  type EditMessageResponse,
+  type TypingState,
+  type UnreadCountsResponse,
+  type SearchMessagesParams,
+  type SearchMessagesResponse,
+  type SearchResult,
+  type MuteParams,
+  type MuteResponse,
+  type ArchiveResponse,
+  type ListBlockedResponse,
 } from '../types';
 
 export interface ChatApiConfig {
@@ -196,6 +207,114 @@ export class ChatApi {
   }
 
   // --------------------------------------------------------------------------
+  // Edits, typing, unread, search (Bundle A)
+  // --------------------------------------------------------------------------
+
+  /** Edit a message you previously sent. PATCH /v1/chat/messages/:id */
+  async editMessage(messageId: string, params: EditMessageParams): Promise<EditMessageResponse> {
+    const raw = await this.patch(`/v1/chat/messages/${messageId}`, {
+      content_text: params.contentText,
+      content_meta: params.contentMeta,
+    });
+    return {
+      messageId: raw.message_id,
+      contentText: raw.content_text,
+      editCount: raw.edit_count ?? 0,
+      editedAt: raw.edited_at ?? '',
+    };
+  }
+
+  /** Broadcast a typing indicator to a conversation. POST /v1/chat/conversations/:id/typing */
+  async typing(conversationId: string, state: TypingState): Promise<void> {
+    await this.post(`/v1/chat/conversations/${conversationId}/typing`, { state });
+  }
+
+  /** Get unread counts for every conversation the user participates in. */
+  async getUnreadCounts(): Promise<UnreadCountsResponse> {
+    const raw = await this.get('/v1/chat/conversations/unread');
+    return {
+      conversations: (raw.conversations ?? []).map((c: any) => ({
+        conversationId: c.conversation_id,
+        unreadCount: c.unread_count ?? 0,
+        lastReadSeq: c.last_read_seq ?? 0,
+      })),
+      total: raw.total ?? 0,
+    };
+  }
+
+  /** Full-text search over messages (ClickHouse-backed). */
+  async searchMessages(params: SearchMessagesParams): Promise<SearchMessagesResponse> {
+    const qs = new URLSearchParams();
+    qs.set('q', params.q);
+    if (params.conversationId) qs.set('conversation_id', params.conversationId);
+    if (params.limit != null) qs.set('limit', String(params.limit));
+    if (params.beforeSeq != null) qs.set('before_seq', String(params.beforeSeq));
+    const raw = await this.get(`/v1/chat/messages/search?${qs.toString()}`);
+    return {
+      results: (raw.results ?? []).map((r: any): SearchResult => ({
+        message: transformMessage(r.message),
+        snippet: r.snippet ?? '',
+      })),
+    };
+  }
+
+  // --------------------------------------------------------------------------
+  // Mute, archive, block (Bundle B)
+  // --------------------------------------------------------------------------
+
+  /** Mute a conversation for the current user. */
+  async mute(conversationId: string, params?: MuteParams): Promise<MuteResponse> {
+    const body: Record<string, unknown> = {};
+    if (params?.until) body.until = params.until;
+    if (params?.durationSec != null) body.duration_sec = params.durationSec;
+    const raw = await this.post(`/v1/chat/conversations/${conversationId}/mute`, body);
+    return {
+      conversationId: raw.conversation_id,
+      mutedUntil: raw.muted_until,
+    };
+  }
+
+  /** Unmute a conversation. */
+  async unmute(conversationId: string): Promise<void> {
+    await this.delete(`/v1/chat/conversations/${conversationId}/mute`);
+  }
+
+  /** Archive a conversation for the current user. */
+  async archive(conversationId: string): Promise<ArchiveResponse> {
+    const raw = await this.post(`/v1/chat/conversations/${conversationId}/archive`);
+    return {
+      conversationId: raw.conversation_id,
+      archivedAt: raw.archived_at,
+    };
+  }
+
+  /** Unarchive a conversation. */
+  async unarchive(conversationId: string): Promise<void> {
+    await this.delete(`/v1/chat/conversations/${conversationId}/archive`);
+  }
+
+  /** Soft-block a user. Blocked users' messages are hidden from the caller's views. */
+  async blockUser(userId: string): Promise<void> {
+    await this.post(`/v1/chat/users/${userId}/block`);
+  }
+
+  /** Unblock a user. */
+  async unblockUser(userId: string): Promise<void> {
+    await this.delete(`/v1/chat/users/${userId}/block`);
+  }
+
+  /** List users the caller has blocked. */
+  async listBlocked(): Promise<ListBlockedResponse> {
+    const raw = await this.get('/v1/chat/blocks');
+    return {
+      blocked: (raw.blocked ?? []).map((b: any) => ({
+        userId: b.user_id,
+        createdAt: b.created_at,
+      })),
+    };
+  }
+
+  // --------------------------------------------------------------------------
   // Messaging Token
   // --------------------------------------------------------------------------
 
@@ -291,6 +410,8 @@ function transformMessage(raw: any): Message {
     isInternal: raw.is_internal,
     isForwarded: raw.is_forwarded,
     reactions: raw.reactions?.map(transformReactionGroup),
+    editCount: raw.edit_count ?? undefined,
+    editedAt: raw.edited_at ?? undefined,
   };
 }
 
@@ -314,6 +435,8 @@ function transformConversation(raw: any): Conversation {
     createdAt: raw.created_at ?? '',
     lastMessagePreview: raw.last_message_preview,
     unreadCount: raw.unread_count ?? 0,
+    mutedUntil: raw.muted_until ?? null,
+    archivedAt: raw.archived_at ?? null,
   };
 
   if (raw.contact) {
